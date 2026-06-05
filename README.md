@@ -1,17 +1,18 @@
 # Gem Tool
 
-Gem Tool is a standalone Discord utility bot for applications and giveaways.
+Gem Tool is a standalone Discord utility bot for application panels and giveaways.
 
 It includes:
 
-- application panels
+- application panels with Discord dropdowns
 - DM application flows
 - text and dropdown application questions
 - per-server application settings
 - application logs, accepted roles, and ticket buttons
 - giveaway creation, editing, ending, rerolling, and participant management
-- giveaway requirements, blacklist roles, bypass roles, message requirements, extra entries, winner DMs, and owner-only winner override
+- giveaway requirements, blacklist roles, bypass roles, message requirements, extra entries, and winner DMs
 - a public status and invite website
+- built-in Terms of Service and Privacy Policy pages
 
 ## Render
 
@@ -27,7 +28,7 @@ Recommended Render service:
 Set these in Render:
 
 - `DISCORD_TOKEN`: Discord bot token for the Gem Tool bot.
-- `DISCORD_CLIENT_ID`: Discord application/client ID. Used for the Add to server button.
+- `DISCORD_CLIENT_ID`: Discord application/client ID. Used for the Add to server button and dashboard login.
 - `DISCORD_CLIENT_SECRET`: Discord OAuth2 client secret. Used for the web dashboard login.
 - `DATA_DIR`: Persistent data directory. Use `/var/data` if the Render service has a disk.
 
@@ -43,8 +44,7 @@ Recommended:
 
 Optional:
 
-- `GIVEAWAY_EMOJI`: Button emoji for giveaway entry. Default is `🎉`.
-- `GIVEAWAY_VOTE_URL`: Link shown in giveaway winner DMs. Defaults to `PUBLIC_BASE_URL`.
+- `GIVEAWAY_EMOJI`: Button emoji for giveaway entry. Default is the party popper emoji.
 - `GIVEAWAY_CHECK_INTERVAL_SECONDS`: How often ended giveaways are checked. Default is `20`.
 - `APPLICATION_TIMEOUT_SECONDS`: Time users have to finish an application. Default is `10800`.
 
@@ -81,6 +81,13 @@ If you use the Render URL instead of a custom domain, use:
 
 ```text
 https://your-render-service.onrender.com/applications/callback
+```
+
+Use these policy links in the Discord Developer Portal:
+
+```text
+https://your-domain-or-render-url/terms
+https://your-domain-or-render-url/privacy
 ```
 
 ## Main Commands

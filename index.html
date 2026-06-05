@@ -82,22 +82,28 @@
     }
 
     .gem-logo {
-      width: 42px;
-      height: 42px;
-      display: grid;
-      place-items: center;
-      border-radius: 14px;
-      background:
-        linear-gradient(145deg, rgba(66, 245, 215, 0.95), rgba(98, 199, 255, 0.84) 42%, rgba(142, 108, 255, 0.92));
-      box-shadow: 0 16px 42px rgba(66, 245, 215, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.46);
-      transform: rotate(45deg);
+      width: 50px;
+      height: 50px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       flex: 0 0 auto;
+      filter: drop-shadow(0 14px 28px rgba(66, 245, 215, 0.28));
     }
 
-    .gem-logo span {
-      transform: rotate(-45deg);
-      font-weight: 1000;
-      color: #08111f;
+    .gem-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .status-logo {
+      width: min(260px, 84%);
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 24px 46px rgba(20, 189, 255, 0.32));
+      flex: 0 0 auto;
     }
 
     nav {
@@ -281,16 +287,6 @@
       border: 1px solid rgba(255, 255, 255, 0.12);
     }
 
-    .crystal-shape {
-      width: 112px;
-      height: 112px;
-      clip-path: polygon(50% 0, 92% 28%, 78% 88%, 50% 100%, 22% 88%, 8% 28%);
-      background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.8), transparent 26%),
-        linear-gradient(155deg, var(--aqua), var(--cyan) 44%, var(--violet) 75%, var(--pink));
-      box-shadow: 0 0 44px rgba(66, 245, 215, 0.45);
-    }
-
     .stats {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -341,6 +337,29 @@
       line-height: 1.5;
     }
 
+    footer {
+      position: relative;
+      z-index: 1;
+      width: min(1180px, calc(100% - 36px));
+      margin: 0 auto 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    footer a {
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 800;
+      margin-left: 14px;
+    }
+
+    footer a:hover { color: var(--aqua); }
+
     @media (max-width: 860px) {
       .hero { grid-template-columns: 1fr; }
       .features { grid-template-columns: 1fr; }
@@ -355,13 +374,12 @@
   <div class="shell">
     <header>
       <a class="brand" href="/">
-        <span class="gem-logo"><span>G</span></span>
+        <span class="gem-logo"><img src="/assets/gem-tool-logo.svg" alt="Gem Tool"></span>
         <span>Gem Tool</span>
       </a>
       <nav>
         <a href="/applications">Dashboard</a>
         <a href="#applications">Applications</a>
-        <a href="#giveaways">Giveaways</a>
         <a id="nav-support" href="#" target="_blank" rel="noopener">Support</a>
       </nav>
     </header>
@@ -370,10 +388,10 @@
       <section class="hero">
         <div>
           <span class="eyebrow">Discord utility bot</span>
-          <h1><span class="accent">Applications</span> and giveaways in one clean bot.</h1>
+          <h1><span class="accent">Applications</span> and server tools made clean.</h1>
           <p class="lead">
             Gem Tool helps your server run staff applications, review submissions, open applicant tickets,
-            and host giveaways with requirements, extra entries, rerolls, and winner DMs.
+            and host clean giveaways with requirements, extra entries, rerolls, and winner DMs.
           </p>
           <div class="actions">
             <a class="button primary disabled" id="invite-link" href="#">Add to server</a>
@@ -389,7 +407,7 @@
             <span class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">Offline</span></span>
           </div>
           <div class="crystal" aria-hidden="true">
-            <div class="crystal-shape"></div>
+            <img class="status-logo" src="/assets/gem-tool-logo.svg" alt="">
           </div>
           <div class="stats">
             <div class="stat">
@@ -411,8 +429,8 @@
           <h2>Application Panels</h2>
           <p>Create panels, add text or dropdown questions, send applications in DMs, and log reviews per server.</p>
         </article>
-        <article class="card feature" id="giveaways">
-          <h2>Giveaways</h2>
+        <article class="card feature">
+          <h2>Giveaway Tools</h2>
           <p>Run timed giveaways with role requirements, blacklist roles, message requirements, extra entries, and rerolls.</p>
         </article>
         <article class="card feature">
@@ -421,6 +439,14 @@
         </article>
       </div>
     </section>
+
+    <footer>
+      <span>Gem Tool for Discord communities.</span>
+      <span>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy Policy</a>
+      </span>
+    </footer>
   </div>
 
   <script>
