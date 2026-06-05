@@ -317,7 +317,7 @@
       width: min(1180px, 100%);
       margin: 0 auto;
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 16px;
     }
 
@@ -378,8 +378,8 @@
         <span>Gem Tool</span>
       </a>
       <nav>
+        <a href="/">Home</a>
         <a href="/applications">Dashboard</a>
-        <a href="#applications">Applications</a>
         <a id="nav-support" href="#" target="_blank" rel="noopener">Support</a>
       </nav>
     </header>
@@ -388,10 +388,10 @@
       <section class="hero">
         <div>
           <span class="eyebrow">Discord utility bot</span>
-          <h1><span class="accent">Applications</span> and server tools made clean.</h1>
+          <h1><span class="accent">Gem Tool</span> for clean server systems.</h1>
           <p class="lead">
             Gem Tool helps your server run staff applications, review submissions, open applicant tickets,
-            and host clean giveaways with requirements, extra entries, rerolls, and winner DMs.
+            host giveaways, collect suggestions, and manage button-based reaction roles from one dashboard.
           </p>
           <div class="actions">
             <a class="button primary disabled" id="invite-link" href="#">Add to server</a>
@@ -434,8 +434,12 @@
           <p>Run timed giveaways with role requirements, blacklist roles, message requirements, extra entries, and rerolls.</p>
         </article>
         <article class="card feature">
-          <h2>Server Friendly</h2>
-          <p>Settings are stored per server, so every guild can have its own panels, questions, logs, tickets, and roles.</p>
+          <h2>Suggestions</h2>
+          <p>Collect ideas in one channel, let members vote, then mark suggestions approved, denied, considered, or implemented.</p>
+        </article>
+        <article class="card feature">
+          <h2>Reaction Roles</h2>
+          <p>Create polished button panels for ping roles, access roles, and opt-in server roles without messy setup.</p>
         </article>
       </div>
     </section>
