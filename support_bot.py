@@ -43,7 +43,6 @@ COMMAND_SYNC_MODE = os.getenv("COMMAND_SYNC_MODE", "global").strip().lower()
 COMMAND_SYNC_GUILD_ID = os.getenv("COMMAND_SYNC_GUILD_ID", "").strip()
 
 GIVEAWAY_EMOJI = os.getenv("GIVEAWAY_EMOJI", "\U0001f389").strip() or "\U0001f389"
-GIVEAWAY_VOTE_URL = os.getenv("GIVEAWAY_VOTE_URL", PUBLIC_BASE_URL).strip()
 GIVEAWAY_CHECK_INTERVAL_SECONDS = max(10, int(os.getenv("GIVEAWAY_CHECK_INTERVAL_SECONDS", "20")))
 GIVEAWAY_MIN_DURATION_SECONDS = 60
 GIVEAWAY_MAX_DURATION_SECONDS = 60 * 60 * 24 * 30
@@ -587,7 +586,7 @@ def giveaway_message_url(giveaway: dict[str, Any]) -> str:
     message_id = int(giveaway.get("message_id") or 0)
     if guild_id and channel_id and message_id:
         return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
-    return GIVEAWAY_VOTE_URL or "https://discord.com"
+    return PUBLIC_BASE_URL or "https://discord.com"
 
 
 def build_giveaway_link_view(giveaway: dict[str, Any]) -> discord.ui.View:
@@ -605,8 +604,7 @@ async def dm_giveaway_winner(user_id: int, giveaway: dict[str, Any]) -> None:
         title="Congratulations!",
         description=(
             f"Congratulations! You've won the giveaway of [{prize}]({giveaway_message_url(giveaway)}) "
-            f"in the server: **{guild_name}**\n\n"
-            f"[Please help me by voting \U0001f682]({GIVEAWAY_VOTE_URL})"
+            f"in the server: **{guild_name}**"
         ),
         color=discord.Color.green(),
         timestamp=discord.utils.utcnow(),
@@ -630,8 +628,7 @@ async def dm_entry_removed(user_id: int, giveaway: dict[str, Any], role: Optiona
         title="Entry Removed!",
         description=(
             f"Your entry for the giveaway of [{prize}]({giveaway_message_url(giveaway)}) is removed because "
-            f"you have the blacklisted role **{role_name}** in the server **{guild_name}**\n\n"
-            f"[Please help me by voting \U0001f682]({GIVEAWAY_VOTE_URL})"
+            f"you have the blacklisted role **{role_name}** in the server **{guild_name}**"
         ),
         color=discord.Color.red(),
         timestamp=discord.utils.utcnow(),
@@ -865,6 +862,41 @@ class ParticipantsView(discord.ui.View):
             print(f"Could not edit giveaway participants page: {error}")
 
 
+class GiveawayLeaveConfirmView(discord.ui.View):
+    def __init__(self, giveaway_id: str, user_id: int):
+        super().__init__(timeout=90)
+        self.giveaway_id = giveaway_id
+        self.user_id = user_id
+
+    @discord.ui.button(label="Leave Giveaway", style=discord.ButtonStyle.danger)
+    async def leave_button(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        if interaction.user.id != self.user_id:
+            await safe_send(interaction, "This confirmation belongs to another user.", ephemeral=True)
+            return
+        giveaways = load_giveaways()
+        giveaway = giveaways.get(self.giveaway_id)
+        if not giveaway:
+            await interaction.response.edit_message(content="Giveaway not found anymore.", view=None)
+            return
+        if giveaway.get("ended"):
+            await interaction.response.edit_message(content="This giveaway has already ended.", view=None)
+            return
+
+        participant_ids = normalize_id_list(giveaway.get("participant_ids"))
+        if self.user_id not in participant_ids:
+            await interaction.response.edit_message(content="You are not entered in this giveaway anymore.", view=None)
+            return
+
+        giveaway["participant_ids"] = [user_id for user_id in participant_ids if user_id != self.user_id]
+        entries = normalize_int_mapping(giveaway.get("participant_entries"), maximum=100)
+        entries.pop(str(self.user_id), None)
+        giveaway["participant_entries"] = entries
+        giveaways[self.giveaway_id] = giveaway
+        save_giveaways(giveaways)
+        await update_giveaway_message(self.giveaway_id)
+        await interaction.response.edit_message(content="Your giveaway entry was removed.", view=None)
+
+
 class GiveawayView(discord.ui.View):
     def __init__(self, giveaway_id: str):
         super().__init__(timeout=None)
@@ -916,9 +948,13 @@ class GiveawayView(discord.ui.View):
         participant_ids = normalize_id_list(giveaway.get("participant_ids"))
         entries = normalize_int_mapping(giveaway.get("participant_entries"), maximum=100)
         if interaction.user.id in participant_ids:
-            giveaway["participant_ids"] = [user_id for user_id in participant_ids if user_id != interaction.user.id]
-            entries.pop(str(interaction.user.id), None)
-            response = "Your giveaway entry was removed."
+            await safe_send(
+                interaction,
+                'You have already entered this giveaway. If you want to leave, click "Leave Giveaway".',
+                view=GiveawayLeaveConfirmView(self.giveaway_id, interaction.user.id),
+                ephemeral=True,
+            )
+            return
         else:
             participant_ids.append(interaction.user.id)
             giveaway["participant_ids"] = participant_ids
@@ -1025,7 +1061,16 @@ async def finish_giveaway(giveaway_id: str, *, manual: bool = False) -> tuple[bo
     if isinstance(channel, discord.TextChannel):
         try:
             if winners:
-                await channel.send(f"Congratulations {', '.join(f'<@{user_id}>' for user_id in winners)}! You won **{giveaway.get('prize')}**.")
+                winner_mentions = ", ".join(f"<@{user_id}>" for user_id in winners)
+                result_embed = discord.Embed(
+                    title="Congratulations! \U0001f389",
+                    description=f"{winner_mentions} won the giveaway of **{giveaway.get('prize')}**!",
+                    color=discord.Color.blue(),
+                    timestamp=discord.utils.utcnow(),
+                )
+                if bot.user and bot.user.display_avatar:
+                    result_embed.set_author(name=bot.user.display_name, icon_url=bot.user.display_avatar.url)
+                await channel.send(embed=result_embed, view=build_giveaway_link_view(giveaway))
             else:
                 await channel.send(f"Giveaway **{giveaway.get('prize')}** ended with no valid entries.")
         except discord.HTTPException:
