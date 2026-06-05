@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: Gemtool.bot
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py
+    startCommand: python3 server.py
+    autoDeploy: true
+    envVars:
+      - key: APP_NAME
+        value: Gem Tool
+      - key: PUBLIC_BASE_URL
+        value: https://gemtool.bot
+      - key: LAST_UPDATE
+        value: June 5, 2026
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DASHBOARD_SESSION_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
