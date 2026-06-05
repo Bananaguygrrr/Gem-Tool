@@ -336,7 +336,9 @@ def multi_role_options(guild: Any, selected_ids: list[int]) -> str:
     )
 
 
-def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = None, active: str = "applications") -> str:
+def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = None, active: str = "dashboard") -> str:
+    if active == "applications":
+        active = "dashboard"
     user = session.get("user", {}) if session else {}
     avatar = user.get("avatar_url")
     user_label = esc(user.get("username") or "Login")
@@ -348,7 +350,7 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     )
     nav = {
         "home": "/",
-        "applications": "/applications",
+        "dashboard": "/applications",
         "support": SUPPORT_SERVER_URL or "/",
     }
     support_attrs = ' target="_blank" rel="noopener"' if SUPPORT_SERVER_URL else ""
@@ -680,6 +682,55 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       padding: 9px 0;
       text-align: left;
     }}
+    .feature-tabs {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 0 0 16px;
+    }}
+    .feature-tabs a {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      padding: 10px 14px;
+      text-decoration: none;
+      font-weight: 950;
+      background: rgba(255,255,255,.055);
+    }}
+    .feature-tabs a.active, .feature-tabs a:hover {{
+      color: #061014;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--aqua), var(--cyan));
+    }}
+    .module-note {{
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.55;
+    }}
+    .inline-list {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 0;
+    }}
+    .inline-list span {{
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+      color: var(--muted);
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: 850;
+    }}
+    .subtle-card {{
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 14px;
+      background: rgba(0,0,0,.18);
+      padding: 14px;
+      margin-top: 12px;
+    }}
     code {{
       border: 1px solid rgba(255,255,255,.12);
       border-radius: 7px;
@@ -735,7 +786,7 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     <a class="brand" href="/"><span class="logo"><img src="/assets/gem-tool-logo.svg" alt=""></span><span>{esc(APP_NAME)}</span></a>
     <nav>
       <a class="{"active" if active == "home" else ""}" href="{nav["home"]}">Home</a>
-      <a class="{"active" if active == "applications" else ""}" href="{nav["applications"]}">Applications</a>
+      <a class="{"active" if active == "dashboard" else ""}" href="{nav["dashboard"]}">Dashboard</a>
       <a href="{esc(nav["support"])}"{support_attrs}>Support</a>
     </nav>
     {login_button}
@@ -781,7 +832,7 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
       <aside class="card pad">
         <span class="pill">Secure Discord login</span>
         <h2>Login</h2>
-        <p class="muted">No dashboard token is needed. Discord decides which servers you can manage.</p>
+        <p class="muted">Sign in with Discord to manage the servers where you have permission.</p>
         {setup}
         {error_html}
         <div class="button-row">
@@ -789,7 +840,7 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
         </div>
       </aside>
     </section>"""
-    return base_layout("Applications", body, session=session, active="applications")
+    return base_layout("Dashboard", body, session=session, active="dashboard")
 
 
 def render_policy_page(kind: str) -> str:
@@ -849,7 +900,7 @@ def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]
             f"""
             <a class="server-card" href="/applications?guild_id={guild.id}">
               <span class="server-icon">{guild_icon(guild, guild.name)}</span>
-              <span><b>{esc(guild.name)}</b><small>Configure applications and giveaways</small></span>
+              <span><b>{esc(guild.name)}</b><small>Configure applications, giveaways, suggestions, and roles</small></span>
             </a>"""
         )
 
@@ -876,7 +927,7 @@ def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]
       {empty}
       <div class="server-grid">{"".join(cards)}</div>
     </section>"""
-    return base_layout("Applications", body, session=session, active="applications")
+    return base_layout("Dashboard", body, session=session, active="dashboard")
 
 
 def render_flash(query: dict[str, list[str]]) -> str:
@@ -917,13 +968,58 @@ def render_panel_questions(panel_key: str, panel: dict[str, Any], guild_id: int)
     return "".join(rows)
 
 
+def dashboard_tab_nav(guild_id: int, active_tab: str) -> str:
+    tabs = [
+        ("applications", "Applications"),
+        ("giveaways", "Giveaways"),
+        ("suggestions", "Suggestions"),
+        ("reaction-roles", "Reaction Roles"),
+    ]
+    return '<div class="feature-tabs">' + "".join(
+        f'<a class="{"active" if key == active_tab else ""}" href="/applications?guild_id={guild_id}&tab={key}">{label}</a>'
+        for key, label in tabs
+    ) + "</div>"
+
+
+def role_badges(guild: Any, role_ids: list[int]) -> str:
+    if not role_ids:
+        return '<span>None</span>'
+    return "".join(f"<span>@{esc(role_name(guild, role_id))}</span>" for role_id in role_ids)
+
+
+def reaction_panel_options(panels: dict[str, Any], selected_id: str = "") -> str:
+    options = ['<option value="">Choose panel</option>']
+    for panel_id, panel in sorted(panels.items(), key=lambda item: str(item[1].get("name", item[0])).lower()):
+        label = f"{panel.get('name') or panel_id} ({panel_id})"
+        options.append(f'<option value="{esc(panel_id)}"{selected(panel_id, selected_id)}>{esc(label)}</option>')
+    return "\n".join(options)
+
+
+def style_options(selected_style: str = "primary") -> str:
+    labels = {
+        "primary": "Blue",
+        "secondary": "Grey",
+        "success": "Green",
+        "danger": "Red",
+    }
+    return "\n".join(
+        f'<option value="{key}"{selected(key, selected_style)}>{label}</option>'
+        for key, label in labels.items()
+    )
+
+
 def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[str, list[str]]) -> str:
     guild = bot_guilds().get(str(guild_id))
     if not guild:
         return render_server_selection(session, {"error": ["That server is not available. Is Gem Tool invited and online?"]})
 
+    tab = form_one(query, "tab", "applications").lower().replace("_", "-")
+    if tab not in {"applications", "giveaways", "suggestions", "reaction-roles"}:
+        tab = "applications"
+    tab_input = f'<input type="hidden" name="tab" value="{esc(tab)}">'
     guild_state = application_system.get_guild_state(guild_id)
     panels = guild_state.setdefault("panels", {})
+
     panel_cards = []
     for panel_key, panel in sorted(panels.items()):
         questions_html = render_panel_questions(panel_key, panel, guild_id)
@@ -932,12 +1028,13 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
             f"""
             <article class="panel-item">
               <form method="post" action="/applications?guild_id={guild_id}">
+                <input type="hidden" name="tab" value="applications">
                 <input type="hidden" name="action" value="update_panel">
                 <input type="hidden" name="panel_key" value="{esc(panel_key)}">
                 <div class="two">
                   <div>
                     <label>Panel name</label>
-                    <input name="name" maxlength="80" value="{esc(panel.get("name", panel_key))}">
+                    <input name="name" maxlength="80" value="{esc(panel.get('name', panel_key))}">
                   </div>
                   <div>
                     <label>Accepted role</label>
@@ -945,8 +1042,8 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
                   </div>
                 </div>
                 <label>Description</label>
-                <input name="description" maxlength="100" value="{esc(panel.get("description", ""))}">
-                <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="enabled"{checked(panel.get("enabled", True) is not False)}> Show in dropdown</label>
+                <input name="description" maxlength="100" value="{esc(panel.get('description', ''))}">
+                <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="enabled"{checked(panel.get('enabled', True) is not False)}> Show in dropdown</label>
                 <div class="button-row">
                   <button class="primary" type="submit">Save panel</button>
                   <button class="danger" type="submit" name="action" value="delete_panel">Delete panel</button>
@@ -955,6 +1052,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
               <h4>Questions</h4>
               {questions_html}
               <form method="post" action="/applications?guild_id={guild_id}">
+                <input type="hidden" name="tab" value="applications">
                 <input type="hidden" name="action" value="add_question">
                 <input type="hidden" name="panel_key" value="{esc(panel_key)}">
                 <div class="two">
@@ -993,24 +1091,11 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         for giveaway in sorted(giveaways, key=lambda item: int(item.get("created_at") or 0), reverse=True)[:8]
     ) or '<tr><td colspan="3" class="muted">No giveaways stored for this server yet.</td></tr>'
 
-    body = f"""
-    {render_flash(query)}
-    <div class="button-row" style="margin-bottom: 16px;"><a class="button" href="/applications">Back to servers</a></div>
-    <section class="grid">
-      <div class="card pad span-12">
-        <div class="section-title">
-          <div>
-            <span class="pill">Configuring</span>
-            <h1 style="font-size: clamp(34px, 5vw, 58px); margin-top: 10px;">{esc(guild.name)}</h1>
-            <p class="muted">Changes are saved only for this server.</p>
-          </div>
-          <span class="server-icon">{guild_icon(guild, guild.name)}</span>
-        </div>
-      </div>
-
+    application_section = f"""
       <div class="card pad span-5">
         <h2>Application channels</h2>
         <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="applications">
           <input type="hidden" name="action" value="save_channels">
           <label>Application panel channel</label>
           <select name="application_channel_id">{channel_options(guild, guild_state.get("application_channel_id"))}</select>
@@ -1026,6 +1111,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
       <div class="card pad span-7">
         <h2>Application text</h2>
         <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="applications">
           <input type="hidden" name="action" value="save_text">
           <label>Text above the dropdown</label>
           <textarea name="panel_text" maxlength="1000">{esc(guild_state.get("panel_text", application_system.DEFAULT_PANEL_TEXT))}</textarea>
@@ -1041,6 +1127,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
       <div class="card pad span-12">
         <h2>Create panel</h2>
         <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="applications">
           <input type="hidden" name="action" value="create_panel">
           <div class="two">
             <div>
@@ -1054,11 +1141,13 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           </div>
           <div class="button-row"><button class="primary" type="submit">Create panel</button></div>
         </form>
-      </div>
+      </div>"""
 
+    giveaway_section = f"""
       <div class="card pad span-6">
         <div class="section-title"><h2>Giveaway access</h2><span class="pill">{active_count} active / {ended_count} ended</span></div>
         <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="giveaways">
           <input type="hidden" name="action" value="save_giveaway_roles">
           <label>Creator roles</label>
           <select name="creator_role_ids" multiple>{multi_role_options(guild, giveaway_settings.get("creator_role_ids", []))}</select>
@@ -1078,15 +1167,227 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <thead><tr><th>ID</th><th>Prize</th><th>Status</th></tr></thead>
           <tbody>{giveaway_rows}</tbody>
         </table>
+      </div>"""
+
+    suggestion_settings = support_bot.get_suggestion_settings(guild_id) if support_bot else {
+        "channel_id": 0,
+        "submit_channel_id": 0,
+        "move_channel_id": 0,
+        "anonymous": False,
+        "dm_results": True,
+        "vote_limit": 10,
+    }
+    suggestions = []
+    if support_bot:
+        suggestions = [
+            suggestion
+            for suggestion in support_bot.load_suggestions().values()
+            if int(suggestion.get("guild_id") or 0) == guild_id
+        ]
+    suggestion_rows = "".join(
+        (
+            f"<tr><td>#{int(suggestion.get('number') or 0)}</td>"
+            f"<td>{esc(str(suggestion.get('content') or '')[:100])}</td>"
+            f"<td>{esc(suggestion.get('status') or 'pending')}</td>"
+            f"<td>{int(suggestion.get('upvotes') or 0)} / {int(suggestion.get('downvotes') or 0)}</td></tr>"
+        )
+        for suggestion in sorted(suggestions, key=lambda item: int(item.get("created_at") or 0), reverse=True)[:10]
+    ) or '<tr><td colspan="4" class="muted">No suggestions stored for this server yet.</td></tr>'
+
+    suggestion_section = f"""
+      <div class="card pad span-6">
+        <h2>Suggestion channels</h2>
+        <p class="module-note">Users can submit with <code>/suggestion suggest</code>. You can also set a submit-only channel if you want suggestions typed in one place and posted in another.</p>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="suggestions">
+          <input type="hidden" name="action" value="save_suggestion_settings">
+          <label>Public suggestion channel</label>
+          <select name="suggestion_channel_id">{channel_options(guild, suggestion_settings.get("channel_id"))}</select>
+          <label>Submit channel, optional</label>
+          <select name="suggestion_submit_channel_id">{channel_options(guild, suggestion_settings.get("submit_channel_id"))}</select>
+          <label>Moderator result copy channel, optional</label>
+          <select name="suggestion_move_channel_id">{channel_options(guild, suggestion_settings.get("move_channel_id"))}</select>
+          <div class="two">
+            <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="anonymous"{checked(bool(suggestion_settings.get("anonymous")))}> Anonymous suggestions</label>
+            <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="dm_results"{checked(bool(suggestion_settings.get("dm_results", True)))}> DM users on decisions</label>
+          </div>
+          <label>Vote color limit</label>
+          <input name="vote_limit" type="number" min="0" max="500" value="{int(suggestion_settings.get("vote_limit") or 0)}">
+          <div class="button-row"><button class="primary" type="submit">Save suggestion settings</button></div>
+        </form>
       </div>
+      <div class="card pad span-6">
+        <h2>Suggestion commands</h2>
+        <p class="module-note">Moderators can approve, consider, deny, implement, edit, move, and inspect suggestions from Discord.</p>
+        <p><code>/suggestion suggest</code> <code>/suggestion approve</code> <code>/suggestion deny</code></p>
+        <p><code>/suggestion implemented</code> <code>/suggestion edit</code> <code>/suggestion who</code></p>
+        <table class="mini-table">
+          <thead><tr><th>No.</th><th>Content</th><th>Status</th><th>Votes</th></tr></thead>
+          <tbody>{suggestion_rows}</tbody>
+        </table>
+      </div>"""
+
+    rr_state = support_bot.get_reaction_role_guild_state(guild_id) if support_bot else {"panels": {}}
+    rr_panels = rr_state.get("panels", {}) if isinstance(rr_state, dict) else {}
+    rr_cards = []
+    for panel_id, panel in sorted(rr_panels.items(), key=lambda item: str(item[1].get("name", item[0])).lower()):
+        items = panel.get("items", [])
+        item_rows = []
+        for item in items:
+            role_id = int(item.get("role_id") or 0)
+            item_rows.append(
+                f"""
+                <div class="subtle-card">
+                  <b>{esc((item.get("emoji") or "") + " " + (item.get("label") or role_name(guild, role_id)))}</b>
+                  <p class="muted" style="margin: 6px 0 0;">Role: @{esc(role_name(guild, role_id))} | Style: {esc(item.get("style") or "primary")}</p>
+                  <form method="post" action="/applications?guild_id={guild_id}" class="button-row">
+                    <input type="hidden" name="tab" value="reaction-roles">
+                    <input type="hidden" name="action" value="remove_reaction_role_item">
+                    <input type="hidden" name="panel_id" value="{esc(panel_id)}">
+                    <input type="hidden" name="role_id" value="{role_id}">
+                    <button class="danger" type="submit">Remove button</button>
+                  </form>
+                </div>"""
+            )
+        items_html = "".join(item_rows) or '<p class="muted">No role buttons yet.</p>'
+        rr_cards.append(
+            f"""
+            <article class="panel-item">
+              <form method="post" action="/applications?guild_id={guild_id}">
+                <input type="hidden" name="tab" value="reaction-roles">
+                <input type="hidden" name="action" value="update_reaction_role_panel">
+                <input type="hidden" name="panel_id" value="{esc(panel_id)}">
+                <div class="two">
+                  <div>
+                    <label>Panel name</label>
+                    <input name="name" maxlength="80" value="{esc(panel.get('name') or panel_id)}">
+                  </div>
+                  <div>
+                    <label>Channel to post</label>
+                    <select name="channel_id">{channel_options(guild, panel.get("channel_id"))}</select>
+                  </div>
+                </div>
+                <label>Embed title</label>
+                <input name="title" maxlength="180" value="{esc(panel.get("title") or panel.get("name") or "Reaction Roles")}">
+                <label>Description</label>
+                <textarea name="description" maxlength="1800">{esc(panel.get("description") or "Click a button to toggle a role.")}</textarea>
+                <div class="two">
+                  <div>
+                    <label>Allowed roles</label>
+                    <select name="allowed_role_ids" multiple>{multi_role_options(guild, panel.get("allowed_role_ids", []))}</select>
+                  </div>
+                  <div>
+                    <label>Ignored roles</label>
+                    <select name="ignored_role_ids" multiple>{multi_role_options(guild, panel.get("ignored_role_ids", []))}</select>
+                  </div>
+                </div>
+                <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="allow_multiple"{checked(bool(panel.get("allow_multiple", True)))}> Allow members to keep multiple roles from this panel</label>
+                <div class="button-row">
+                  <button class="primary" type="submit">Save panel</button>
+                  <button type="submit" name="action" value="post_reaction_role_panel">Post or refresh</button>
+                  <button class="danger" type="submit" name="action" value="delete_reaction_role_panel">Delete panel</button>
+                </div>
+              </form>
+              <div class="inline-list">
+                <span>ID: {esc(panel_id)}</span>
+                <span>{len(items)} button(s)</span>
+                <span>Allowed: {len(panel.get("allowed_role_ids", []))}</span>
+                <span>Ignored: {len(panel.get("ignored_role_ids", []))}</span>
+              </div>
+              <h4>Role buttons</h4>
+              {items_html}
+            </article>"""
+        )
+    rr_cards_html = "".join(rr_cards) or '<div class="notice">No reaction-role panels yet. Create one, add role buttons, then post it.</div>'
+
+    rr_panel_select = reaction_panel_options(rr_panels)
+    reaction_role_section = f"""
+      <div class="card pad span-5">
+        <h2>Create reaction-role panel</h2>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="reaction-roles">
+          <input type="hidden" name="action" value="create_reaction_role_panel">
+          <label>Name</label>
+          <input name="name" maxlength="80" placeholder="Ping Roles">
+          <label>Channel to post</label>
+          <select name="channel_id">{channel_options(guild)}</select>
+          <label>Embed title</label>
+          <input name="title" maxlength="180" placeholder="PING ROLES">
+          <label>Description</label>
+          <textarea name="description" maxlength="1800" placeholder="Click a button to toggle a role."></textarea>
+          <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="allow_multiple" checked> Allow multiple roles</label>
+          <div class="button-row"><button class="primary" type="submit">Create panel</button></div>
+        </form>
+      </div>
+      <div class="card pad span-7">
+        <h2>Add role button</h2>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="reaction-roles">
+          <input type="hidden" name="action" value="add_reaction_role_item">
+          <label>Panel</label>
+          <select name="panel_id">{rr_panel_select}</select>
+          <div class="two">
+            <div>
+              <label>Role</label>
+              <select name="role_id">{role_options(guild, include_blank=True)}</select>
+            </div>
+            <div>
+              <label>Button color</label>
+              <select name="style">{style_options()}</select>
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Button label</label>
+              <input name="label" maxlength="80" placeholder="Giveaway Ping">
+            </div>
+            <div>
+              <label>Emoji, optional</label>
+              <input name="emoji" maxlength="32" placeholder="gift">
+            </div>
+          </div>
+          <div class="button-row"><button class="primary" type="submit">Add or update button</button></div>
+        </form>
+      </div>
+      <div class="card pad span-12">
+        <div class="section-title"><h2>Reaction-role panels</h2><span class="pill">{len(rr_panels)} panel(s)</span></div>
+        <p class="module-note">Buttons toggle roles instantly. Allowed roles limit who may use the panel, ignored roles block users from using it.</p>
+        <div class="panel-list">{rr_cards_html}</div>
+      </div>"""
+
+    active_section = {
+        "applications": application_section,
+        "giveaways": giveaway_section,
+        "suggestions": suggestion_section,
+        "reaction-roles": reaction_role_section,
+    }[tab]
+
+    body = f"""
+    {render_flash(query)}
+    <div class="button-row" style="margin-bottom: 16px;"><a class="button" href="/applications">Back to servers</a></div>
+    <section class="grid">
+      <div class="card pad span-12">
+        <div class="section-title">
+          <div>
+            <span class="pill">Configuring</span>
+            <h1 style="font-size: clamp(34px, 5vw, 58px); margin-top: 10px;">{esc(guild.name)}</h1>
+            <p class="muted">Choose a module below. Changes are saved only for this server.</p>
+          </div>
+          <span class="server-icon">{guild_icon(guild, guild.name)}</span>
+        </div>
+        {dashboard_tab_nav(guild_id, tab)}
+      </div>
+      {active_section}
     </section>"""
-    return base_layout("Dashboard", body, session=session, active="applications")
+    return base_layout("Dashboard", body, session=session, active="dashboard")
 
 
-def redirect_to_dashboard(guild_id: Optional[int], *, ok: str = "", error: str = "") -> str:
+def redirect_to_dashboard(guild_id: Optional[int], *, tab: str = "", ok: str = "", error: str = "") -> str:
     query: dict[str, str] = {}
     if guild_id:
         query["guild_id"] = str(guild_id)
+    if tab:
+        query["tab"] = tab
     if ok:
         query["ok"] = ok
     if error:
@@ -1263,13 +1564,16 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             return
 
         action = form_one(form, "action")
+        tab = form_one(form, "tab", "applications").lower().replace("_", "-")
+        if tab not in {"applications", "giveaways", "suggestions", "reaction-roles"}:
+            tab = "applications"
         try:
             ok_message = self._apply_dashboard_action(guild_id, action, form)
-            self._send_redirect(redirect_to_dashboard(guild_id, ok=ok_message))
+            self._send_redirect(redirect_to_dashboard(guild_id, tab=tab, ok=ok_message))
         except ValueError as exc:
-            self._send_redirect(redirect_to_dashboard(guild_id, error=str(exc)))
+            self._send_redirect(redirect_to_dashboard(guild_id, tab=tab, error=str(exc)))
         except Exception as exc:
-            self._send_redirect(redirect_to_dashboard(guild_id, error=f"{type(exc).__name__}: {exc}"))
+            self._send_redirect(redirect_to_dashboard(guild_id, tab=tab, error=f"{type(exc).__name__}: {exc}"))
 
     def _apply_dashboard_action(self, guild_id: int, action: str, form: dict[str, list[str]]) -> str:
         guild = bot_guilds().get(str(guild_id))
@@ -1395,6 +1699,111 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             settings.setdefault("guilds", {})[str(guild_id)] = guild_settings
             support_bot.save_giveaway_settings(settings)
             return "Giveaway role settings saved."
+
+        if action == "save_suggestion_settings":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Suggestion module is not loaded.")
+            support_bot.set_suggestion_config(
+                guild_id,
+                channel_id=int(form_one(form, "suggestion_channel_id") or 0),
+                submit_channel_id=int(form_one(form, "suggestion_submit_channel_id") or 0),
+                move_channel_id=int(form_one(form, "suggestion_move_channel_id") or 0),
+                anonymous="anonymous" in form,
+                dm_results="dm_results" in form,
+                vote_limit=max(0, min(500, int(form_one(form, "vote_limit") or 0))),
+            )
+            return "Suggestion settings saved."
+
+        if action == "create_reaction_role_panel":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Reaction-role module is not loaded.")
+            name = form_one(form, "name")
+            if not name:
+                raise ValueError("Panel name cannot be empty.")
+            panel = support_bot.create_reaction_role_panel_record(
+                guild_id,
+                name=name,
+                channel_id=int(form_one(form, "channel_id") or 0),
+                title=form_one(form, "title"),
+                description=form_one(form, "description"),
+                allow_multiple="allow_multiple" in form,
+            )
+            return f"Reaction-role panel {panel['id']} created."
+
+        if action in {"update_reaction_role_panel", "post_reaction_role_panel", "delete_reaction_role_panel"}:
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Reaction-role module is not loaded.")
+            panel_id = form_one(form, "panel_id")
+            if not panel_id:
+                raise ValueError("Choose a reaction-role panel.")
+            if action == "delete_reaction_role_panel":
+                support_bot.delete_reaction_role_panel_record(guild_id, panel_id)
+                return "Reaction-role panel deleted."
+            if action == "post_reaction_role_panel":
+                ok, result = run_bot_coro(support_bot.post_reaction_role_panel(guild, panel_id))
+                if not ok:
+                    raise ValueError(str(result))
+                posted, message = result
+                if not posted:
+                    raise ValueError(message)
+                return message
+            panel = support_bot.update_reaction_role_panel_record(
+                guild_id,
+                panel_id,
+                name=form_one(form, "name"),
+                channel_id=int(form_one(form, "channel_id") or 0),
+                title=form_one(form, "title"),
+                description=form_one(form, "description"),
+                allow_multiple="allow_multiple" in form,
+            )
+            support_bot.set_reaction_role_access_lists(
+                guild_id,
+                panel_id,
+                allowed_role_ids=[int(value) for value in form.get("allowed_role_ids", []) if value.isdigit()],
+                ignored_role_ids=[int(value) for value in form.get("ignored_role_ids", []) if value.isdigit()],
+            )
+            run_bot_coro(support_bot.post_reaction_role_panel(guild, panel_id))
+            return f"Reaction-role panel {panel.get('name') or panel_id} saved."
+
+        if action == "add_reaction_role_item":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Reaction-role module is not loaded.")
+            panel_id = form_one(form, "panel_id")
+            role_id = int(form_one(form, "role_id") or 0)
+            if not panel_id:
+                raise ValueError("Choose a reaction-role panel.")
+            role = guild.get_role(role_id)
+            if not role:
+                raise ValueError("Choose a valid role.")
+            allowed, reason = application_system.bot_can_manage_role(guild, role)
+            if not allowed:
+                raise ValueError(f"I cannot manage that role: {reason}.")
+            panel = support_bot.add_reaction_role_item(
+                guild_id,
+                panel_id,
+                role_id=role.id,
+                label=form_one(form, "label") or role.name,
+                emoji=form_one(form, "emoji"),
+                style=form_one(form, "style", "primary"),
+            )
+            run_bot_coro(support_bot.post_reaction_role_panel(guild, panel_id))
+            return f"Added role button to {panel.get('name') or panel_id}."
+
+        if action == "remove_reaction_role_item":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Reaction-role module is not loaded.")
+            panel_id = form_one(form, "panel_id")
+            role_id = int(form_one(form, "role_id") or 0)
+            if not panel_id or not role_id:
+                raise ValueError("Missing reaction-role item.")
+            support_bot.remove_reaction_role_item(guild_id, panel_id, role_id)
+            run_bot_coro(support_bot.post_reaction_role_panel(guild, panel_id))
+            return "Role button removed."
 
         raise ValueError("Unknown dashboard action.")
 
