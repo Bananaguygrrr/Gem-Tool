@@ -1086,7 +1086,6 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             "response_type": "code",
             "scope": "identify guilds",
             "state": state,
-            "prompt": "none",
         }
         url = f"https://discord.com/oauth2/authorize?{urlencode(params)}"
         self._send_redirect(url, cookies=[make_cookie(STATE_COOKIE, sign_value(state), max_age=600)])
