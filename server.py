@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent
 LAST_UPDATE = os.getenv("LAST_UPDATE", "").strip()
 APP_NAME = os.getenv("APP_NAME", "Gem Tool").strip() or "Gem Tool"
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://gemtool.bot").strip().rstrip("/")
-SUPPORT_SERVER_URL = os.getenv("SUPPORT_SERVER_URL", "").strip()
+SUPPORT_SERVER_URL = (os.getenv("SUPPORT_SERVER_URL") or "https://discord.gg/sUxqbyV87F").strip()
 DISCORD_CLIENT_ID = (
     os.getenv("DISCORD_CLIENT_ID")
     or os.getenv("CLIENT_ID")
@@ -420,15 +420,19 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       letter-spacing: 0;
     }}
     .logo {{
-      width: 38px;
-      height: 38px;
-      display: grid;
-      place-items: center;
-      border-radius: 13px;
-      color: #071014;
-      background: linear-gradient(135deg, var(--aqua), var(--cyan), var(--violet));
-      box-shadow: 0 14px 34px rgba(41,245,210,.18);
-      font-weight: 1000;
+      width: 46px;
+      height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 14px 28px rgba(41,245,210,.22));
+      flex: 0 0 auto;
+    }}
+    .logo img {{
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
     }}
     nav {{
       display: flex;
@@ -683,6 +687,42 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       background: rgba(255,255,255,.08);
       color: var(--text);
     }}
+    .policy {{
+      max-width: 860px;
+      margin: 0 auto;
+      padding: clamp(12px, 4vw, 38px) 0 64px;
+    }}
+    .policy h1 {{
+      margin-bottom: 12px;
+    }}
+    .policy h2 {{
+      margin-top: 28px;
+    }}
+    .policy p, .policy li {{
+      color: var(--muted);
+      line-height: 1.7;
+    }}
+    footer {{
+      width: min(1220px, 100%);
+      margin: 0 auto;
+      padding: 0 clamp(18px, 5vw, 44px) 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    footer a {{
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 850;
+      margin-left: 12px;
+    }}
+    footer a:hover {{
+      color: var(--aqua);
+    }}
     @media (max-width: 900px) {{
       .topbar {{ align-items: flex-start; flex-direction: column; }}
       .hero, .two {{ grid-template-columns: 1fr; }}
@@ -692,7 +732,7 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/"><span class="logo">G</span><span>{esc(APP_NAME)}</span></a>
+    <a class="brand" href="/"><span class="logo"><img src="/assets/gem-tool-logo.svg" alt=""></span><span>{esc(APP_NAME)}</span></a>
     <nav>
       <a class="{"active" if active == "home" else ""}" href="{nav["home"]}">Home</a>
       <a class="{"active" if active == "applications" else ""}" href="{nav["applications"]}">Applications</a>
@@ -701,6 +741,10 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     {login_button}
   </header>
   <main>{body}</main>
+  <footer>
+    <span>{esc(APP_NAME)} for Discord communities.</span>
+    <span><a href="/terms">Terms</a><a href="/privacy">Privacy Policy</a></span>
+  </footer>
 </body>
 </html>"""
 
@@ -746,6 +790,47 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
       </aside>
     </section>"""
     return base_layout("Applications", body, session=session, active="applications")
+
+
+def render_policy_page(kind: str) -> str:
+    is_terms = kind == "terms"
+    title = "Terms of Service" if is_terms else "Privacy Policy"
+    if is_terms:
+        body = f"""
+        <section class="policy">
+          <span class="kicker">Legal</span>
+          <h1>{esc(APP_NAME)} Terms of Service</h1>
+          <p>By inviting or using {esc(APP_NAME)}, you agree to use the bot responsibly and only in servers where you have permission to manage applications, giveaways, and related settings.</p>
+          <h2>Allowed Use</h2>
+          <p>{esc(APP_NAME)} provides Discord application panels, review tools, and giveaway utilities. Server administrators are responsible for the content they configure, including questions, roles, channels, prizes, and giveaway requirements.</p>
+          <h2>Availability</h2>
+          <p>The service is provided as-is. We try to keep the bot online and reliable, but we cannot guarantee uninterrupted access or message delivery from Discord or Render.</p>
+          <h2>Server Content</h2>
+          <p>Do not use the bot for illegal, abusive, hateful, fraudulent, or unsafe activity. We may remove access for servers that abuse the service or attempt to exploit it.</p>
+          <h2>Contact</h2>
+          <p>For support, join the official support server linked on the website.</p>
+        </section>"""
+    else:
+        body = f"""
+        <section class="policy">
+          <span class="kicker">Legal</span>
+          <h1>{esc(APP_NAME)} Privacy Policy</h1>
+          <p>{esc(APP_NAME)} stores only the data needed to run application panels, submissions, giveaway entries, server settings, and the dashboard login session.</p>
+          <h2>Data We Store</h2>
+          <ul>
+            <li>Discord user IDs, usernames, and avatars for application submissions and dashboard sessions.</li>
+            <li>Server IDs, channel IDs, role IDs, panel settings, questions, and review settings.</li>
+            <li>Giveaway IDs, prizes, participants, winner IDs, requirements, and message links.</li>
+            <li>Message count statistics only when giveaway message requirements are used.</li>
+          </ul>
+          <h2>How Data Is Used</h2>
+          <p>Data is used to show dashboards, process applications, manage giveaways, enforce requirements, and keep per-server settings after redeploys.</p>
+          <h2>Data Sharing</h2>
+          <p>We do not sell your data. Data may be processed by Discord and Render because the bot runs through those services.</p>
+          <h2>Removal</h2>
+          <p>Server administrators can delete panels, questions, submissions, and giveaways from the dashboard or Discord commands. For support, use the official support server.</p>
+        </section>"""
+    return base_layout(title, body, active="")
 
 
 def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]) -> str:
@@ -1028,6 +1113,12 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
         clean_path, query = self._path_and_query()
         if clean_path in {"/status", "/api/status"}:
             self._send_json(status_payload())
+            return
+        if clean_path in {"/terms", "/terms-of-service"}:
+            self._send_html(render_policy_page("terms"))
+            return
+        if clean_path in {"/privacy", "/privacy-policy"}:
+            self._send_html(render_policy_page("privacy"))
             return
         if clean_path == "/applications":
             self._handle_applications(query)
