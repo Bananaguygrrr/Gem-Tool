@@ -77,6 +77,15 @@ def load_support_bot():
     return SUPPORT_BOT
 
 
+def effective_client_id(support_health: Optional[dict[str, Any]] = None) -> str:
+    if DISCORD_CLIENT_ID:
+        return DISCORD_CLIENT_ID
+    if support_health is None:
+        live_bot = load_support_bot()
+        support_health = live_bot.status_payload() if live_bot else {}
+    return str(support_health.get("bot_user_id") or "").strip()
+
+
 def current_last_update() -> str:
     if LAST_UPDATE:
         return LAST_UPDATE
@@ -87,11 +96,12 @@ def status_payload() -> dict[str, object]:
     support_bot = load_support_bot()
     support_health = support_bot.status_payload() if support_bot else {}
     online = bool(support_health.get("online"))
+    client_id = effective_client_id(support_health)
     invite_url = ""
-    if DISCORD_CLIENT_ID:
+    if client_id:
         invite_url = (
             "https://discord.com/oauth2/authorize"
-            f"?client_id={DISCORD_CLIENT_ID}&permissions=2147561408&scope=bot%20applications.commands"
+            f"?client_id={client_id}&permissions=2147561408&scope=bot%20applications.commands"
         )
     payload = {
         "app_name": APP_NAME,
@@ -165,7 +175,7 @@ def oauth_redirect_uri() -> str:
 
 
 def dashboard_ready() -> bool:
-    return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET and PUBLIC_BASE_URL)
+    return bool(effective_client_id() and DISCORD_CLIENT_SECRET and PUBLIC_BASE_URL)
 
 
 def bot_is_ready() -> bool:
@@ -701,8 +711,9 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
     if not dashboard_ready():
         setup = f"""
         <div class="notice error">
-          Discord login is not fully configured yet. Set <code>DISCORD_CLIENT_ID</code>,
-          <code>DISCORD_CLIENT_SECRET</code>, and <code>PUBLIC_BASE_URL</code> in Render.
+          Discord login is not fully configured yet. Set <code>DISCORD_CLIENT_SECRET</code>
+          and <code>PUBLIC_BASE_URL</code> in Render. <code>DISCORD_CLIENT_ID</code>
+          is optional once the bot is online, but adding it makes startup login available immediately.
           Add this redirect URL in the Discord Developer Portal:
           <br><br><code>{esc(oauth_redirect_uri())}</code>
         </div>"""
@@ -1076,12 +1087,13 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
         self._send_html(render_server_selection(session, query))
 
     def _handle_login(self) -> None:
+        client_id = effective_client_id()
         if not dashboard_ready():
             self._send_redirect("/applications?error=" + quote("Discord login is not configured yet."))
             return
         state = secrets.token_urlsafe(24)
         params = {
-            "client_id": DISCORD_CLIENT_ID,
+            "client_id": client_id,
             "redirect_uri": oauth_redirect_uri(),
             "response_type": "code",
             "scope": "identify guilds",
@@ -1095,6 +1107,7 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
         state = form_one(query, "state")
         signed_state = self._cookies().get(STATE_COOKIE)
         expected_state = verify_signed_value(signed_state.value) if signed_state else None
+        client_id = effective_client_id()
         if not code or not state or not expected_state or not hmac.compare_digest(state, expected_state):
             self._send_redirect(
                 "/applications?error=" + quote("Discord login failed because the session state did not match."),
@@ -1106,7 +1119,7 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
                 f"{DISCORD_API}/oauth2/token",
                 method="POST",
                 form={
-                    "client_id": DISCORD_CLIENT_ID,
+                    "client_id": client_id,
                     "client_secret": DISCORD_CLIENT_SECRET,
                     "grant_type": "authorization_code",
                     "code": code,

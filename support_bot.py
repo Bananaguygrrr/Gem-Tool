@@ -1825,6 +1825,7 @@ def status_payload() -> dict[str, Any]:
         "status": "Bot online" if BOT_ONLINE and not bot.is_closed() else "Bot starting or offline",
         "guild_count": len(bot.guilds),
         "bot_user": str(bot.user) if bot.user else "",
+        "bot_user_id": str(bot.user.id) if bot.user else "",
         "started_at": BOT_STARTED_AT,
         "uptime_seconds": max(0, int(time.time()) - BOT_STARTED_AT),
         "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
