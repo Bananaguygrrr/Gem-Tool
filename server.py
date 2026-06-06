@@ -19,7 +19,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, unquote
 from urllib.request import Request, urlopen
 
-import application_system
+APPLICATION_SYSTEM_IMPORT_ERROR = ""
+try:
+    import application_system
+except ModuleNotFoundError as exc:
+    APPLICATION_SYSTEM_IMPORT_ERROR = str(exc)
+
+    class _ApplicationSystemUnavailable:
+        DEFAULT_PANEL_TEXT = "Select an option to begin!"
+
+        def __getattr__(self, name: str):
+            raise RuntimeError(f"Application system is unavailable: {APPLICATION_SYSTEM_IMPORT_ERROR}")
+
+    application_system = _ApplicationSystemUnavailable()
 
 
 ROOT = Path(__file__).resolve().parent
@@ -119,11 +131,20 @@ def status_payload() -> dict[str, object]:
     }
     if SUPPORT_BOT_IMPORT_ERROR:
         payload["support_bot_error"] = SUPPORT_BOT_IMPORT_ERROR
+    if APPLICATION_SYSTEM_IMPORT_ERROR:
+        payload["application_system_error"] = APPLICATION_SYSTEM_IMPORT_ERROR
     return payload
 
 
 def esc(value: Any) -> str:
     return html.escape(str(value or ""), quote=True)
+
+
+def fmt_count(value: Any) -> str:
+    try:
+        return f"{int(value or 0):,}"
+    except Exception:
+        return str(value or 0)
 
 
 def b64url(data: bytes) -> str:
@@ -731,6 +752,124 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       padding: 14px;
       margin-top: 12px;
     }}
+    .overview-hero {{
+      display: grid;
+      grid-template-columns: 76px 1fr;
+      gap: 16px;
+      align-items: center;
+    }}
+    .overview-hero .server-icon {{
+      width: 76px;
+      height: 76px;
+      border-radius: 20px;
+    }}
+    .metric-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }}
+    .metric-card {{
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 16px;
+      padding: 16px;
+      background: linear-gradient(145deg, rgba(255,255,255,.07), rgba(255,255,255,.025));
+      min-height: 106px;
+    }}
+    .metric-card span {{
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+    }}
+    .metric-card b {{
+      display: block;
+      margin-top: 8px;
+      font-size: 28px;
+      line-height: 1;
+    }}
+    .module-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }}
+    .module-card {{
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      background: rgba(255,255,255,.045);
+      text-decoration: none;
+    }}
+    .module-card:hover {{
+      border-color: var(--line-strong);
+      background: rgba(41,245,210,.07);
+    }}
+    .module-card b {{
+      display: block;
+      margin-bottom: 6px;
+    }}
+    .welcome-preview {{
+      border-left: 4px solid var(--aqua);
+      border-radius: 10px;
+      background: rgba(35,37,43,.9);
+      padding: 16px;
+      white-space: pre-wrap;
+      line-height: 1.52;
+      color: var(--text);
+    }}
+    .welcome-image-preview {{
+      margin-top: 12px;
+      max-width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.2);
+    }}
+    .token-list {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }}
+    .token-list code {{
+      font-size: 12px;
+    }}
+    .rr-panel-preview {{
+      border-left: 4px solid #5865f2;
+      padding: 14px 16px;
+      border-radius: 8px;
+      background: rgba(35, 37, 43, .88);
+      margin: 12px 0;
+      max-width: 620px;
+    }}
+    .rr-panel-preview h3 {{
+      margin: 0 0 10px;
+      font-size: 16px;
+    }}
+    .rr-panel-preview p {{
+      margin: 0;
+      color: var(--text);
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }}
+    .rr-buttons {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }}
+    .rr-button-pill {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: #5865f2;
+      color: white;
+      font-weight: 900;
+      font-size: 14px;
+    }}
     code {{
       border: 1px solid rgba(255,255,255,.12);
       border-radius: 7px;
@@ -884,47 +1023,6 @@ def render_policy_page(kind: str) -> str:
     return base_layout(title, body, active="")
 
 
-def render_policy_page(kind: str) -> str:
-    is_terms = kind == "terms"
-    title = "Terms of Service" if is_terms else "Privacy Policy"
-    if is_terms:
-        body = f"""
-        <section class="policy">
-          <span class="kicker">Legal</span>
-          <h1>{esc(APP_NAME)} Terms of Service</h1>
-          <p>By inviting or using {esc(APP_NAME)}, you agree to use the bot responsibly and only in servers where you have permission to manage applications, giveaways, and related settings.</p>
-          <h2>Allowed Use</h2>
-          <p>{esc(APP_NAME)} provides Discord application panels, review tools, and giveaway utilities. Server administrators are responsible for the content they configure, including questions, roles, channels, prizes, and giveaway requirements.</p>
-          <h2>Availability</h2>
-          <p>The service is provided as-is. We try to keep the bot online and reliable, but we cannot guarantee uninterrupted access or message delivery from Discord or Render.</p>
-          <h2>Server Content</h2>
-          <p>Do not use the bot for illegal, abusive, hateful, fraudulent, or unsafe activity. We may remove access for servers that abuse the service or attempt to exploit it.</p>
-          <h2>Contact</h2>
-          <p>For support, join the official support server linked on the website.</p>
-        </section>"""
-    else:
-        body = f"""
-        <section class="policy">
-          <span class="kicker">Legal</span>
-          <h1>{esc(APP_NAME)} Privacy Policy</h1>
-          <p>{esc(APP_NAME)} stores only the data needed to run application panels, submissions, giveaway entries, server settings, and the dashboard login session.</p>
-          <h2>Data We Store</h2>
-          <ul>
-            <li>Discord user IDs, usernames, and avatars for application submissions and dashboard sessions.</li>
-            <li>Server IDs, channel IDs, role IDs, panel settings, questions, and review settings.</li>
-            <li>Giveaway IDs, prizes, participants, winner IDs, requirements, and message links.</li>
-            <li>Message count statistics only when giveaway message requirements are used.</li>
-          </ul>
-          <h2>How Data Is Used</h2>
-          <p>Data is used to show dashboards, process applications, manage giveaways, enforce requirements, and keep per-server settings after redeploys.</p>
-          <h2>Data Sharing</h2>
-          <p>We do not sell your data. Data may be processed by Discord and Render because the bot runs through those services.</p>
-          <h2>Removal</h2>
-          <p>Server administrators can delete panels, questions, submissions, and giveaways from the dashboard or Discord commands. For support, use the official support server.</p>
-        </section>"""
-    return base_layout(title, body, active="")
-
-
 def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]) -> str:
     bot_lookup = bot_guilds()
     manageable = session.get("manageable_guilds", {})
@@ -941,7 +1039,7 @@ def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]
             f"""
             <a class="server-card" href="/applications?guild_id={guild.id}">
               <span class="server-icon">{guild_icon(guild, guild.name)}</span>
-              <span><b>{esc(guild.name)}</b><small>Configure applications, giveaways, suggestions, and roles</small></span>
+              <span><b>{esc(guild.name)}</b><small>Configure applications, giveaways, suggestions, reaction roles, and welcome messages</small></span>
             </a>"""
         )
 
@@ -1011,10 +1109,12 @@ def render_panel_questions(panel_key: str, panel: dict[str, Any], guild_id: int)
 
 def dashboard_tab_nav(guild_id: int, active_tab: str) -> str:
     tabs = [
+        ("overview", "Overview"),
         ("applications", "Applications"),
         ("giveaways", "Giveaways"),
         ("suggestions", "Suggestions"),
         ("reaction-roles", "Reaction Roles"),
+        ("welcome", "Welcomer"),
     ]
     return '<div class="feature-tabs">' + "".join(
         f'<a class="{"active" if key == active_tab else ""}" href="/applications?guild_id={guild_id}&tab={key}">{label}</a>'
@@ -1054,9 +1154,10 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
     if not guild:
         return render_server_selection(session, {"error": ["That server is not available. Is Gem Tool invited and online?"]})
 
-    tab = form_one(query, "tab", "applications").lower().replace("_", "-")
-    if tab not in {"applications", "giveaways", "suggestions", "reaction-roles"}:
-        tab = "applications"
+    tab = form_one(query, "tab", "overview").lower().replace("_", "-")
+    valid_tabs = {"overview", "applications", "giveaways", "suggestions", "reaction-roles", "welcome"}
+    if tab not in valid_tabs:
+        tab = "overview"
     tab_input = f'<input type="hidden" name="tab" value="{esc(tab)}">'
     guild_state = application_system.get_guild_state(guild_id)
     panels = guild_state.setdefault("panels", {})
@@ -1131,6 +1232,105 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         f"<tr><td><code>{esc(giveaway.get('id'))}</code></td><td>{esc(giveaway.get('prize'))}</td><td>{'Ended' if giveaway.get('ended') else 'Active'}</td></tr>"
         for giveaway in sorted(giveaways, key=lambda item: int(item.get("created_at") or 0), reverse=True)[:8]
     ) or '<tr><td colspan="3" class="muted">No giveaways stored for this server yet.</td></tr>'
+
+    member_count = getattr(guild, "member_count", None) or len(getattr(guild, "members", []) or [])
+    text_channel_count = len(getattr(guild, "text_channels", []) or [])
+    voice_channel_count = len(getattr(guild, "voice_channels", []) or [])
+    total_message_count = support_bot.get_guild_total_message_count(guild_id) if support_bot else 0
+    default_welcome_message = getattr(
+        support_bot,
+        "DEFAULT_WELCOME_MESSAGE",
+        "\U0001f44b | Welcome {user} to {server}!\n\n"
+        "\U0001f4d6 | Please look in {rules_channel} for the rules of the server\n\n"
+        "\U0001f525 | You are member {member_count}!",
+    )
+    welcome_settings = support_bot.get_welcome_settings(guild_id) if support_bot else {
+        "enabled": False,
+        "channel_id": 0,
+        "rules_channel_id": 0,
+        "message_template": default_welcome_message,
+        "image_url": "",
+    }
+    rules_channel_id = int(welcome_settings.get("rules_channel_id") or 0)
+    rules_channel = guild.get_channel(rules_channel_id) if rules_channel_id else None
+    rules_label = f"#{getattr(rules_channel, 'name', 'rules')}" if rules_channel else "#rules"
+    preview_text = str(welcome_settings.get("message_template") or default_welcome_message)
+    for token, value in {
+        "{user}": "@NewMember",
+        "{username}": "NewMember",
+        "{server}": guild.name,
+        "{member_count}": fmt_count(member_count),
+        "{rules_channel}": rules_label,
+        "{rules}": rules_label,
+    }.items():
+        preview_text = preview_text.replace(token, str(value))
+    welcome_image_url = str(welcome_settings.get("image_url") or "").strip()
+    welcome_image_preview = (
+        f'<img class="welcome-image-preview" src="{esc(welcome_image_url)}" alt="Welcome image preview">'
+        if welcome_image_url
+        else ""
+    )
+
+    overview_section = f"""
+      <div class="card pad span-12">
+        <div class="overview-hero">
+          <span class="server-icon">{guild_icon(guild, guild.name)}</span>
+          <div>
+            <span class="pill">Server overview</span>
+            <h2 style="margin: 10px 0 4px;">{esc(guild.name)}</h2>
+            <p class="muted" style="margin: 0;">Live Discord data plus saved Gem Tool module data for this server.</p>
+          </div>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-card"><span>Members</span><b>{fmt_count(member_count)}</b></div>
+          <div class="metric-card"><span>Text Channels</span><b>{fmt_count(text_channel_count)}</b></div>
+          <div class="metric-card"><span>Voice Channels</span><b>{fmt_count(voice_channel_count)}</b></div>
+          <div class="metric-card"><span>Total Messages Tracked</span><b>{fmt_count(total_message_count)}</b></div>
+          <div class="metric-card"><span>Active Giveaways</span><b>{fmt_count(active_count)}</b></div>
+          <div class="metric-card"><span>Ended Giveaways</span><b>{fmt_count(ended_count)}</b></div>
+          <div class="metric-card"><span>Application Panels</span><b>{fmt_count(len(panels))}</b></div>
+          <div class="metric-card"><span>Welcome Messages</span><b>{'On' if welcome_settings.get('enabled') else 'Off'}</b></div>
+        </div>
+      </div>
+      <div class="card pad span-12">
+        <div class="section-title"><h2>Modules</h2><span class="pill">Configure this server</span></div>
+        <div class="module-grid">
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=applications"><b>Applications</b><span class="muted">Panels, questions, logs, tickets, accepted roles.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=giveaways"><b>Giveaways</b><span class="muted">Role access and stored active/ended giveaway data.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=suggestions"><b>Suggestions</b><span class="muted">Channels, voting, anonymous mode, moderator decisions.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=reaction-roles"><b>Reaction Roles</b><span class="muted">Button-based role panels users can toggle.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=welcome"><b>Welcomer</b><span class="muted">Welcome text, rules channel, member count, and image.</span></a>
+        </div>
+      </div>"""
+
+    welcome_section = f"""
+      <div class="card pad span-6">
+        <div class="section-title"><h2>Welcomer</h2><span class="pill">{'Enabled' if welcome_settings.get('enabled') else 'Disabled'}</span></div>
+        <p class="module-note">Send a polished message when a new member joins. Placeholders are replaced when the message is sent.</p>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="welcome">
+          <input type="hidden" name="action" value="save_welcome_settings">
+          <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="enabled"{checked(bool(welcome_settings.get("enabled")))}> Enable welcome messages</label>
+          <label>Welcome channel</label>
+          <select name="welcome_channel_id">{channel_options(guild, welcome_settings.get("channel_id"))}</select>
+          <label>Rules channel, optional</label>
+          <select name="rules_channel_id">{channel_options(guild, welcome_settings.get("rules_channel_id"))}</select>
+          <label>Welcome text</label>
+          <textarea name="message_template" maxlength="1800">{esc(welcome_settings.get("message_template") or default_welcome_message)}</textarea>
+          <div class="token-list">
+            <code>{'{user}'}</code><code>{'{username}'}</code><code>{'{server}'}</code><code>{'{member_count}'}</code><code>{'{rules_channel}'}</code>
+          </div>
+          <label>Welcome image URL, optional</label>
+          <input name="image_url" maxlength="500" value="{esc(welcome_image_url)}" placeholder="https://...">
+          <div class="button-row"><button class="primary" type="submit">Save welcomer</button></div>
+        </form>
+      </div>
+      <div class="card pad span-6">
+        <h2>Preview</h2>
+        <p class="module-note">This is only a preview. Discord will use real member mentions and counts when someone joins.</p>
+        <div class="welcome-preview">{esc(preview_text)}</div>
+        {welcome_image_preview}
+      </div>"""
 
     application_section = f"""
       <div class="card pad span-5">
@@ -1230,7 +1430,8 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
             f"<tr><td>#{int(suggestion.get('number') or 0)}</td>"
             f"<td>{esc(str(suggestion.get('content') or '')[:100])}</td>"
             f"<td>{esc(suggestion.get('status') or 'pending')}</td>"
-            f"<td>{int(suggestion.get('upvotes') or 0)} / {int(suggestion.get('downvotes') or 0)}</td></tr>"
+            f"<td>{len(support_bot.normalize_id_list(suggestion.get('upvoter_ids'))) if support_bot else 0} / "
+            f"{len(support_bot.normalize_id_list(suggestion.get('downvoter_ids'))) if support_bot else 0}</td></tr>"
         )
         for suggestion in sorted(suggestions, key=lambda item: int(item.get("created_at") or 0), reverse=True)[:10]
     ) or '<tr><td colspan="4" class="muted">No suggestions stored for this server yet.</td></tr>'
@@ -1273,14 +1474,17 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
     rr_cards = []
     for panel_id, panel in sorted(rr_panels.items(), key=lambda item: str(item[1].get("name", item[0])).lower()):
         items = panel.get("items", [])
+        button_preview = []
         item_rows = []
         for item in items:
             role_id = int(item.get("role_id") or 0)
+            button_text = f"{item.get('emoji') or ''} {item.get('label') or role_name(guild, role_id)}".strip()
+            button_preview.append(f'<span class="rr-button-pill">{esc(button_text)}</span>')
             item_rows.append(
                 f"""
                 <div class="subtle-card">
-                  <b>{esc((item.get("emoji") or "") + " " + (item.get("label") or role_name(guild, role_id)))}</b>
-                  <p class="muted" style="margin: 6px 0 0;">Role: @{esc(role_name(guild, role_id))} | Style: {esc(item.get("style") or "primary")}</p>
+                  <b>{esc(button_text)}</b>
+                  <p class="muted" style="margin: 6px 0 0;">Gives @{esc(role_name(guild, role_id))}</p>
                   <form method="post" action="/applications?guild_id={guild_id}" class="button-row">
                     <input type="hidden" name="tab" value="reaction-roles">
                     <input type="hidden" name="action" value="remove_reaction_role_item">
@@ -1291,80 +1495,70 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
                 </div>"""
             )
         items_html = "".join(item_rows) or '<p class="muted">No role buttons yet.</p>'
+        preview_buttons_html = "".join(button_preview) or '<span class="muted">Add buttons below.</span>'
         rr_cards.append(
             f"""
             <article class="panel-item">
+              <div class="rr-panel-preview">
+                <h3>{esc(panel.get("title") or panel.get("name") or "PING ROLES")}</h3>
+                <p>{esc(panel.get("description") or "Clicking a button will get you the role indicated on the button and clicking the same button again will remove the role indicated on the button.")}</p>
+              </div>
+              <div class="rr-buttons">{preview_buttons_html}</div>
               <form method="post" action="/applications?guild_id={guild_id}">
                 <input type="hidden" name="tab" value="reaction-roles">
                 <input type="hidden" name="action" value="update_reaction_role_panel">
                 <input type="hidden" name="panel_id" value="{esc(panel_id)}">
                 <div class="two">
                   <div>
-                    <label>Panel name</label>
-                    <input name="name" maxlength="80" value="{esc(panel.get('name') or panel_id)}">
+                    <label>Title</label>
+                    <input name="title" maxlength="180" value="{esc(panel.get("title") or panel.get("name") or "PING ROLES")}">
                   </div>
                   <div>
-                    <label>Channel to post</label>
+                    <label>Channel</label>
                     <select name="channel_id">{channel_options(guild, panel.get("channel_id"))}</select>
                   </div>
                 </div>
-                <label>Embed title</label>
-                <input name="title" maxlength="180" value="{esc(panel.get("title") or panel.get("name") or "Reaction Roles")}">
-                <label>Description</label>
-                <textarea name="description" maxlength="1800">{esc(panel.get("description") or "Click a button to toggle a role.")}</textarea>
-                <div class="two">
-                  <div>
-                    <label>Allowed roles</label>
-                    <select name="allowed_role_ids" multiple>{multi_role_options(guild, panel.get("allowed_role_ids", []))}</select>
-                  </div>
-                  <div>
-                    <label>Ignored roles</label>
-                    <select name="ignored_role_ids" multiple>{multi_role_options(guild, panel.get("ignored_role_ids", []))}</select>
-                  </div>
-                </div>
-                <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="allow_multiple"{checked(bool(panel.get("allow_multiple", True)))}> Allow members to keep multiple roles from this panel</label>
+                <input type="hidden" name="name" value="{esc(panel.get("name") or panel_id)}">
+                <input type="hidden" name="allow_multiple" value="on">
+                <label>Text</label>
+                <textarea name="description" maxlength="1800">{esc(panel.get("description") or "Clicking a button will get you the role indicated on the button and clicking the same button again will remove the role indicated on the button.")}</textarea>
                 <div class="button-row">
-                  <button class="primary" type="submit">Save panel</button>
+                  <button class="primary" type="submit">Save</button>
                   <button type="submit" name="action" value="post_reaction_role_panel">Post or refresh</button>
-                  <button class="danger" type="submit" name="action" value="delete_reaction_role_panel">Delete panel</button>
+                  <button class="danger" type="submit" name="action" value="delete_reaction_role_panel">Delete</button>
                 </div>
               </form>
-              <div class="inline-list">
-                <span>ID: {esc(panel_id)}</span>
-                <span>{len(items)} button(s)</span>
-                <span>Allowed: {len(panel.get("allowed_role_ids", []))}</span>
-                <span>Ignored: {len(panel.get("ignored_role_ids", []))}</span>
-              </div>
-              <h4>Role buttons</h4>
+              <h4>Buttons</h4>
               {items_html}
             </article>"""
         )
-    rr_cards_html = "".join(rr_cards) or '<div class="notice">No reaction-role panels yet. Create one, add role buttons, then post it.</div>'
+    rr_cards_html = "".join(rr_cards) or '<div class="notice">No reaction-role panel yet. Create one, add buttons, then post it.</div>'
 
     rr_panel_select = reaction_panel_options(rr_panels)
     reaction_role_section = f"""
-      <div class="card pad span-5">
-        <h2>Create reaction-role panel</h2>
+      <div class="card pad span-6">
+        <h2>Reaction role panel</h2>
+        <p class="module-note">Simple setup: choose the channel, write the title, write the text, then add blue role buttons.</p>
         <form method="post" action="/applications?guild_id={guild_id}">
           <input type="hidden" name="tab" value="reaction-roles">
           <input type="hidden" name="action" value="create_reaction_role_panel">
-          <label>Name</label>
-          <input name="name" maxlength="80" placeholder="Ping Roles">
-          <label>Channel to post</label>
+          <input type="hidden" name="name" value="Ping Roles">
+          <input type="hidden" name="allow_multiple" value="on">
+          <label>Channel</label>
           <select name="channel_id">{channel_options(guild)}</select>
-          <label>Embed title</label>
-          <input name="title" maxlength="180" placeholder="PING ROLES">
-          <label>Description</label>
-          <textarea name="description" maxlength="1800" placeholder="Click a button to toggle a role."></textarea>
-          <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="allow_multiple" checked> Allow multiple roles</label>
-          <div class="button-row"><button class="primary" type="submit">Create panel</button></div>
+          <label>Title</label>
+          <input name="title" maxlength="180" value="PING ROLES">
+          <label>Text</label>
+          <textarea name="description" maxlength="1800">Clicking a button will get you the role indicated on the button and clicking the same button again will remove the role indicated on the button.</textarea>
+          <div class="button-row"><button class="primary" type="submit">Create</button></div>
         </form>
       </div>
-      <div class="card pad span-7">
-        <h2>Add role button</h2>
+      <div class="card pad span-6">
+        <h2>Add button</h2>
         <form method="post" action="/applications?guild_id={guild_id}">
           <input type="hidden" name="tab" value="reaction-roles">
           <input type="hidden" name="action" value="add_reaction_role_item">
+          <input type="hidden" name="style" value="primary">
           <label>Panel</label>
           <select name="panel_id">{rr_panel_select}</select>
           <div class="two">
@@ -1373,34 +1567,27 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
               <select name="role_id">{role_options(guild, include_blank=True)}</select>
             </div>
             <div>
-              <label>Button color</label>
-              <select name="style">{style_options()}</select>
-            </div>
-          </div>
-          <div class="two">
-            <div>
-              <label>Button label</label>
-              <input name="label" maxlength="80" placeholder="Giveaway Ping">
-            </div>
-            <div>
-              <label>Emoji, optional</label>
+              <label>Emoji</label>
               <input name="emoji" maxlength="32" placeholder="gift">
             </div>
           </div>
-          <div class="button-row"><button class="primary" type="submit">Add or update button</button></div>
+          <label>Button text</label>
+          <input name="label" maxlength="80" placeholder="Giveaway Ping">
+          <div class="button-row"><button class="primary" type="submit">Add button</button></div>
         </form>
       </div>
       <div class="card pad span-12">
-        <div class="section-title"><h2>Reaction-role panels</h2><span class="pill">{len(rr_panels)} panel(s)</span></div>
-        <p class="module-note">Buttons toggle roles instantly. Allowed roles limit who may use the panel, ignored roles block users from using it.</p>
+        <div class="section-title"><h2>Your panels</h2><span class="pill">{len(rr_panels)} panel(s)</span></div>
         <div class="panel-list">{rr_cards_html}</div>
       </div>"""
 
     active_section = {
+        "overview": overview_section,
         "applications": application_section,
         "giveaways": giveaway_section,
         "suggestions": suggestion_section,
         "reaction-roles": reaction_role_section,
+        "welcome": welcome_section,
     }[tab]
 
     body = f"""
@@ -1453,7 +1640,7 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         clean_path, query = self._path_and_query()
-        if clean_path in {"/status", "/api/status"}:
+        if clean_path in {"/status", "/api/status", "/health"}:
             self._send_json(status_payload())
             return
         if clean_path in {"/terms", "/terms-of-service"}:
@@ -1605,9 +1792,9 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             return
 
         action = form_one(form, "action")
-        tab = form_one(form, "tab", "applications").lower().replace("_", "-")
-        if tab not in {"applications", "giveaways", "suggestions", "reaction-roles"}:
-            tab = "applications"
+        tab = form_one(form, "tab", "overview").lower().replace("_", "-")
+        if tab not in {"overview", "applications", "giveaways", "suggestions", "reaction-roles", "welcome"}:
+            tab = "overview"
         try:
             ok_message = self._apply_dashboard_action(guild_id, action, form)
             self._send_redirect(redirect_to_dashboard(guild_id, tab=tab, ok=ok_message))
@@ -1741,6 +1928,23 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             support_bot.save_giveaway_settings(settings)
             return "Giveaway role settings saved."
 
+        if action == "save_welcome_settings":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Welcomer module is not loaded.")
+            channel_id = int(form_one(form, "welcome_channel_id") or 0)
+            if "enabled" in form and not channel_id:
+                raise ValueError("Choose a welcome channel before enabling welcomer.")
+            support_bot.set_welcome_config(
+                guild_id,
+                enabled="enabled" in form,
+                channel_id=channel_id,
+                rules_channel_id=int(form_one(form, "rules_channel_id") or 0),
+                message_template=form_one(form, "message_template", support_bot.DEFAULT_WELCOME_MESSAGE),
+                image_url=form_one(form, "image_url"),
+            )
+            return "Welcomer settings saved."
+
         if action == "save_suggestion_settings":
             support_bot = load_support_bot()
             if not support_bot:
@@ -1800,12 +2004,13 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
                 description=form_one(form, "description"),
                 allow_multiple="allow_multiple" in form,
             )
-            support_bot.set_reaction_role_access_lists(
-                guild_id,
-                panel_id,
-                allowed_role_ids=[int(value) for value in form.get("allowed_role_ids", []) if value.isdigit()],
-                ignored_role_ids=[int(value) for value in form.get("ignored_role_ids", []) if value.isdigit()],
-            )
+            if "allowed_role_ids" in form or "ignored_role_ids" in form:
+                support_bot.set_reaction_role_access_lists(
+                    guild_id,
+                    panel_id,
+                    allowed_role_ids=[int(value) for value in form.get("allowed_role_ids", []) if value.isdigit()],
+                    ignored_role_ids=[int(value) for value in form.get("ignored_role_ids", []) if value.isdigit()],
+                )
             run_bot_coro(support_bot.post_reaction_role_panel(guild, panel_id))
             return f"Reaction-role panel {panel.get('name') or panel_id} saved."
 
