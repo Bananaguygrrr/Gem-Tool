@@ -53,9 +53,15 @@ APPLICATION_TIMEOUT_SECONDS = int(os.getenv("APPLICATION_TIMEOUT_SECONDS", "1080
 GIVEAWAYS_FILE = DATA_DIR / "giveaways.json"
 GIVEAWAY_SETTINGS_FILE = DATA_DIR / "giveaway_settings.json"
 MESSAGE_STATS_FILE = DATA_DIR / "message_stats.json"
+WELCOME_SETTINGS_FILE = DATA_DIR / "welcome_settings.json"
 SUGGESTION_SETTINGS_FILE = DATA_DIR / "suggestion_settings.json"
 SUGGESTIONS_FILE = DATA_DIR / "suggestions.json"
 REACTION_ROLE_PANELS_FILE = DATA_DIR / "reaction_role_panels.json"
+DEFAULT_WELCOME_MESSAGE = (
+    "\U0001f44b | Welcome {user} to {server}!\n\n"
+    "\U0001f4d6 | Please look in {rules_channel} for the rules of the server\n\n"
+    "\U0001f525 | You are member {member_count}!"
+)
 
 NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
 DIGIT_ID_RE = re.compile(r"(\d+)")
@@ -75,6 +81,7 @@ BOT_ONLINE = False
 GIVEAWAYS_CACHE: Optional[dict[str, dict[str, Any]]] = None
 GIVEAWAY_SETTINGS_CACHE: Optional[dict[str, Any]] = None
 MESSAGE_STATS_CACHE: Optional[dict[str, Any]] = None
+WELCOME_SETTINGS_CACHE: Optional[dict[str, Any]] = None
 SUGGESTION_SETTINGS_CACHE: Optional[dict[str, Any]] = None
 SUGGESTIONS_CACHE: Optional[dict[str, dict[str, Any]]] = None
 REACTION_ROLE_PANELS_CACHE: Optional[dict[str, Any]] = None
@@ -429,6 +436,117 @@ def normalize_bool(value: Any, default: bool = False) -> bool:
     if text in {"0", "false", "no", "off", "disabled"}:
         return False
     return default
+
+
+def normalize_welcome_settings(record: Any) -> dict[str, Any]:
+    record = record if isinstance(record, dict) else {}
+    return {
+        "enabled": normalize_bool(record.get("enabled"), False),
+        "channel_id": parse_user_id(record.get("channel_id")) or 0,
+        "rules_channel_id": parse_user_id(record.get("rules_channel_id")) or 0,
+        "message_template": truncate(record.get("message_template") or DEFAULT_WELCOME_MESSAGE, 1800),
+        "image_url": str(record.get("image_url") or "").strip()[:500],
+    }
+
+
+def load_welcome_settings() -> dict[str, Any]:
+    global WELCOME_SETTINGS_CACHE
+    if WELCOME_SETTINGS_CACHE is not None:
+        return WELCOME_SETTINGS_CACHE
+    raw = read_json(WELCOME_SETTINGS_FILE, {"guilds": {}})
+    guilds = raw.get("guilds") if isinstance(raw, dict) else {}
+    if not isinstance(guilds, dict):
+        guilds = {}
+    normalized: dict[str, Any] = {"guilds": {}}
+    for guild_id, guild_settings in guilds.items():
+        if str(guild_id).isdigit():
+            normalized["guilds"][str(guild_id)] = normalize_welcome_settings(guild_settings)
+    WELCOME_SETTINGS_CACHE = normalized
+    return WELCOME_SETTINGS_CACHE
+
+
+def save_welcome_settings(settings: dict[str, Any]) -> None:
+    global WELCOME_SETTINGS_CACHE
+    WELCOME_SETTINGS_CACHE = settings
+    write_json(WELCOME_SETTINGS_FILE, settings)
+
+
+def get_welcome_settings(guild_id: int) -> dict[str, Any]:
+    settings = load_welcome_settings()
+    guild_settings = settings.setdefault("guilds", {}).setdefault(str(guild_id), normalize_welcome_settings({}))
+    normalized = normalize_welcome_settings(guild_settings)
+    settings["guilds"][str(guild_id)] = normalized
+    return normalized
+
+
+def set_welcome_config(guild_id: int, **updates: Any) -> dict[str, Any]:
+    settings = load_welcome_settings()
+    guild_settings = get_welcome_settings(guild_id)
+    for key in ("enabled", "channel_id", "rules_channel_id", "message_template", "image_url"):
+        if key in updates:
+            guild_settings[key] = updates[key]
+    guild_settings = normalize_welcome_settings(guild_settings)
+    settings.setdefault("guilds", {})[str(guild_id)] = guild_settings
+    save_welcome_settings(settings)
+    return guild_settings
+
+
+def get_guild_total_message_count(guild_id: int) -> int:
+    stats = load_message_stats()
+    users = stats.get("guilds", {}).get(str(guild_id), {}).get("users", {})
+    if not isinstance(users, dict):
+        return 0
+    return sum(coerce_int(normalize_message_user_stats(record).get("total", 0)) for record in users.values())
+
+
+def format_welcome_text(settings: dict[str, Any], member: discord.Member) -> str:
+    guild = member.guild
+    rules_channel_id = parse_user_id(settings.get("rules_channel_id")) or 0
+    rules_channel = guild.get_channel(rules_channel_id) if rules_channel_id else None
+    rules_value = rules_channel.mention if rules_channel else "#rules"
+    member_count = guild.member_count or len(getattr(guild, "members", [])) or 0
+    replacements = {
+        "{user}": member.mention,
+        "{username}": member.display_name,
+        "{server}": guild.name,
+        "{member_count}": format_count(member_count),
+        "{rules_channel}": rules_value,
+        "{rules}": rules_value,
+    }
+    text = str(settings.get("message_template") or DEFAULT_WELCOME_MESSAGE)
+    for token, value in replacements.items():
+        text = text.replace(token, str(value))
+    return truncate(text, 1900)
+
+
+async def send_welcome_message(member: discord.Member) -> None:
+    settings = get_welcome_settings(member.guild.id)
+    if not settings.get("enabled"):
+        return
+    channel_id = parse_user_id(settings.get("channel_id")) or 0
+    if not channel_id:
+        return
+    channel = member.guild.get_channel(channel_id) if channel_id else None
+    if channel is None:
+        try:
+            channel = await member.guild.fetch_channel(channel_id)
+        except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+            return
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        return
+    image_url = str(settings.get("image_url") or "").strip()
+    embed = None
+    if image_url:
+        embed = discord.Embed(color=discord.Color.from_rgb(66, 245, 215))
+        embed.set_image(url=image_url)
+    try:
+        await channel.send(
+            content=format_welcome_text(settings, member),
+            embed=embed,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+    except discord.HTTPException as error:
+        print(f"Could not send welcome message in {member.guild.id}: {error}", flush=True)
 
 
 def load_suggestion_settings() -> dict[str, Any]:
@@ -1213,9 +1331,8 @@ def build_suggestion_embed(suggestion: dict[str, Any]) -> discord.Embed:
     else:
         avatar = str(suggestion.get("author_avatar") or "")
         embed.set_author(name=str(suggestion.get("author_name") or "Unknown user"), icon_url=avatar or None)
-    up_count = len(normalize_id_list(suggestion.get("upvoter_ids")))
-    down_count = len(normalize_id_list(suggestion.get("downvoter_ids")))
-    embed.set_footer(text=f"{status} | Upvotes: {format_count(up_count)} | Downvotes: {format_count(down_count)}")
+    if status.lower() != "pending":
+        embed.set_footer(text=status)
     return embed
 
 
@@ -1396,7 +1513,7 @@ class SuggestionVoteView(discord.ui.View):
         down_button = discord.ui.Button(
             label=format_count(down_count),
             emoji="\u2b07\ufe0f",
-            style=discord.ButtonStyle.secondary,
+            style=discord.ButtonStyle.primary,
             custom_id=f"suggestion:down:{suggestion_key}",
         )
         up_button.callback = self.upvote
@@ -1442,15 +1559,11 @@ class SuggestionVoteView(discord.ui.View):
 
 
 def build_reaction_role_embed(panel: dict[str, Any]) -> discord.Embed:
-    embed = discord.Embed(
+    return discord.Embed(
         title=str(panel.get("title") or panel.get("name") or "Reaction Roles"),
         description=str(panel.get("description") or "Click a button to toggle a role."),
-        color=discord.Color.teal(),
+        color=discord.Color.blurple(),
     )
-    if bot.user and bot.user.display_avatar:
-        embed.set_author(name=bot.user.display_name, icon_url=bot.user.display_avatar.url)
-    embed.set_footer(text=f"Panel ID: {panel.get('id')}")
-    return embed
 
 
 def button_style_from_text(value: Any) -> discord.ButtonStyle:
@@ -3073,6 +3186,11 @@ async def on_disconnect() -> None:
     global BOT_ONLINE
     BOT_ONLINE = False
     save_message_stats(force=True)
+
+
+@bot.event
+async def on_member_join(member: discord.Member) -> None:
+    await send_welcome_message(member)
 
 
 @bot.event
