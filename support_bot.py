@@ -3251,7 +3251,7 @@ async def help_slash(interaction: discord.Interaction) -> None:
             "`/suggestion suggest`, `/suggestion channel`, `/suggestion approve`, `/suggestion deny`, `/suggestion implemented`\n\n"
             "**Reaction Roles**\n"
             "`/reaction-role create`, `/reaction-role add`, `/reaction-role post`, `/reaction-role list`\n\n"
-            "For more help and cofigurations join our website. https://gemtool-bot.onrender.com"
+            "For more help and configurations **[join our website](https://gemtool-bot.onrender.com/)**"
         ),
         color=discord.Color.green(),
     )
