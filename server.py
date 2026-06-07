@@ -367,17 +367,27 @@ def multi_role_options(guild: Any, selected_ids: list[int]) -> str:
     )
 
 
+def discord_logo_svg() -> str:
+    return (
+        '<svg class="discord-icon" viewBox="0 0 127.14 96.36" aria-hidden="true" focusable="false">'
+        '<path fill="currentColor" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83A97.68 97.68 0 0 0 49 6.83 72.37 72.37 0 0 0 45.64 0 105.89 105.89 0 0 0 19.39 8.09C2.79 32.65-1.71 56.6.54 80.21A105.73 105.73 0 0 0 32.71 96.36a77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69C36.18 65.69 31 60 31 53s5-12.74 11.43-12.74S54 46 53.89 53s-5.05 12.69-11.44 12.69Zm42.24 0C78.41 65.69 73.25 60 73.25 53s5-12.74 11.44-12.74S96.23 46 96.12 53s-5.04 12.69-11.43 12.69Z"/>'
+        '</svg>'
+    )
+
+
 def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = None, active: str = "dashboard") -> str:
     if active == "applications":
         active = "dashboard"
     user = session.get("user", {}) if session else {}
     avatar = user.get("avatar_url")
     user_label = esc(user.get("username") or "Login")
+    discord_icon = discord_logo_svg()
+    user_avatar_markup = f'<img src="{esc(avatar)}" alt="">' if avatar else f"<span>{discord_icon}</span>"
     login_button = (
-        f'<a class="user-chip" href="/applications/logout">{f"<img src=\"{esc(avatar)}\" alt=\"\">" if avatar else "<span>D</span>"}'
+        f'<a class="user-chip" href="/applications/logout">{user_avatar_markup}'
         f"<strong>{user_label}</strong><em>Logout</em></a>"
         if session
-        else '<a class="login-button" href="/applications/login"><span>D</span> Discord Login</a>'
+        else f'<a class="login-button" href="/applications/login">{discord_icon}<strong>Login</strong></a>'
     )
     nav = {
         "home": "/",
@@ -505,6 +515,12 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       border-radius: 50%;
       background: rgba(255,255,255,.18);
       font-weight: 1000;
+    }}
+    .discord-icon {{
+      width: 22px;
+      height: 22px;
+      flex: 0 0 auto;
+      display: block;
     }}
     .user-chip {{
       background: rgba(255,255,255,.07);
@@ -662,6 +678,10 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       margin-top: 14px;
     }}
     button, .button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       border: 1px solid rgba(255,255,255,.18);
       border-radius: 12px;
       padding: 10px 13px;
@@ -1001,7 +1021,7 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
         {setup}
         {error_html}
         <div class="button-row">
-          <a class="button primary" href="/applications/login"><span>D</span> Discord Login</a>
+          <a class="button primary" href="/applications/login">{discord_logo_svg()}<strong>Login</strong></a>
         </div>
       </aside>
     </section>"""
@@ -1186,12 +1206,23 @@ def render_submission_overview(
     submissions: dict[str, Any],
     selected_submission_id: str,
 ) -> str:
+    def submission_is_open(submission: dict[str, Any]) -> bool:
+        if submission.get("ticket_closed_at"):
+            return False
+        status = str(submission.get("status") or "pending").lower()
+        return status == "pending" or bool(submission.get("ticket_channel_id"))
+
+    open_submissions = {
+        submission_id: submission
+        for submission_id, submission in submissions.items()
+        if isinstance(submission, dict) and submission_is_open(submission)
+    }
     sorted_submissions = sorted(
-        submissions.items(),
+        open_submissions.items(),
         key=lambda item: int(item[1].get("created_at") or 0),
         reverse=True,
     )
-    selected_submission = submissions.get(selected_submission_id) if selected_submission_id else None
+    selected_submission = open_submissions.get(selected_submission_id) if selected_submission_id else None
     if not selected_submission and sorted_submissions:
         selected_submission_id, selected_submission = sorted_submissions[0]
 
@@ -1212,7 +1243,7 @@ def render_submission_overview(
               <td><span class="muted">{submitted_label}</span></td>
             </tr>"""
         )
-    rows_html = "".join(table_rows) or '<tr><td colspan="5" class="muted">No applications have been submitted yet.</td></tr>'
+    rows_html = "".join(table_rows) or '<tr><td colspan="5" class="muted">No open applications right now.</td></tr>'
 
     if selected_submission:
         panel_key = str(selected_submission.get("panel_key") or "")
@@ -1258,8 +1289,8 @@ def render_submission_overview(
 
     return f"""
       <div class="card pad span-5">
-        <div class="section-title"><h2>Applications overview</h2><span class="pill">{fmt_count(len(submissions))} saved</span></div>
-        <p class="module-note">Review every saved submission from this server. Discord buttons still handle accept, deny, history, and ticket actions.</p>
+        <div class="section-title"><h2>Applications overview</h2><span class="pill">{fmt_count(len(open_submissions))} open</span></div>
+        <p class="module-note">Review open submissions from this server. Closed tickets and finished applications are hidden from this list.</p>
         <table class="mini-table">
           <thead><tr><th>ID</th><th>User</th><th>Panel</th><th>Status</th><th>Submitted</th></tr></thead>
           <tbody>{rows_html}</tbody>
@@ -1382,9 +1413,14 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
     default_welcome_message = getattr(
         support_bot,
         "DEFAULT_WELCOME_MESSAGE",
-        "\U0001f44b | Welcome {user} to {server}!\n\n"
-        "\U0001f4d6 | Please look in {rules_channel} for the rules of the server\n\n"
-        "\U0001f525 | You are member {member_count}!",
+        "\U0001f44b | Welcome {user} to **{server}**, you are member **{member_count}**!\n\n"
+        "\U0001f4d6 | Please look in {rules_channel} for the rules of the server.",
+    )
+    default_leave_message = getattr(
+        support_bot,
+        "DEFAULT_LEAVE_MESSAGE",
+        "\U0001f44b | **{username}** has left **{server}**.\n\n"
+        "\U0001f465 | We now have **{member_count}** members.",
     )
     welcome_settings = support_bot.get_welcome_settings(guild_id) if support_bot else {
         "enabled": False,
@@ -1392,6 +1428,9 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         "rules_channel_id": 0,
         "message_template": default_welcome_message,
         "image_url": "",
+        "leave_enabled": False,
+        "leave_channel_id": 0,
+        "leave_message_template": default_leave_message,
     }
     rules_channel_id = int(welcome_settings.get("rules_channel_id") or 0)
     rules_channel = guild.get_channel(rules_channel_id) if rules_channel_id else None
@@ -1412,6 +1451,14 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         if welcome_image_url
         else ""
     )
+    leave_preview_text = str(welcome_settings.get("leave_message_template") or default_leave_message)
+    for token, value in {
+        "{user}": "@LeavingMember",
+        "{username}": "LeavingMember",
+        "{server}": guild.name,
+        "{member_count}": fmt_count(max(member_count - 1, 0)),
+    }.items():
+        leave_preview_text = leave_preview_text.replace(token, str(value))
 
     overview_section = f"""
       <div class="card pad span-12">
@@ -1432,6 +1479,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <div class="metric-card"><span>Ended Giveaways</span><b>{fmt_count(ended_count)}</b></div>
           <div class="metric-card"><span>Application Panels</span><b>{fmt_count(len(panels))}</b></div>
           <div class="metric-card"><span>Welcome Messages</span><b>{'On' if welcome_settings.get('enabled') else 'Off'}</b></div>
+          <div class="metric-card"><span>Leave Messages</span><b>{'On' if welcome_settings.get('leave_enabled') else 'Off'}</b></div>
         </div>
       </div>
       <div class="card pad span-12">
@@ -1442,7 +1490,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=giveaways"><b>Giveaways</b><span class="muted">Role access and stored active/ended giveaway data.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=suggestions"><b>Suggestions</b><span class="muted">Channels, voting, anonymous mode, moderator decisions.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=reaction-roles"><b>Reaction Roles</b><span class="muted">Button-based role panels users can toggle.</span></a>
-          <a class="module-card" href="/applications?guild_id={guild_id}&tab=welcome"><b>Welcomer</b><span class="muted">Welcome text, rules channel, member count, and image.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=welcome"><b>Welcomer</b><span class="muted">Welcome and leave text, rules channel, member count, and image.</span></a>
         </div>
       </div>"""
 
@@ -1450,11 +1498,12 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
 
     welcome_section = f"""
       <div class="card pad span-6">
-        <div class="section-title"><h2>Welcomer</h2><span class="pill">{'Enabled' if welcome_settings.get('enabled') else 'Disabled'}</span></div>
+        <div class="section-title"><h2>Welcome message</h2><span class="pill">{'Enabled' if welcome_settings.get('enabled') else 'Disabled'}</span></div>
         <p class="module-note">Send a polished message when a new member joins. Placeholders are replaced when the message is sent.</p>
         <form method="post" action="/applications?guild_id={guild_id}">
           <input type="hidden" name="tab" value="welcome">
           <input type="hidden" name="action" value="save_welcome_settings">
+          <input type="hidden" name="save_section" value="welcome">
           <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="enabled"{checked(bool(welcome_settings.get("enabled")))}> Enable welcome messages</label>
           <label>Welcome channel</label>
           <select name="welcome_channel_id">{channel_options(guild, welcome_settings.get("channel_id"))}</select>
@@ -1471,10 +1520,33 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         </form>
       </div>
       <div class="card pad span-6">
-        <h2>Preview</h2>
+        <h2>Welcome preview</h2>
         <p class="module-note">This is only a preview. Discord will use real member mentions and counts when someone joins.</p>
         <div class="welcome-preview">{esc(preview_text)}</div>
         {welcome_image_preview}
+      </div>
+      <div class="card pad span-6">
+        <div class="section-title"><h2>Leave message</h2><span class="pill">{'Enabled' if welcome_settings.get('leave_enabled') else 'Disabled'}</span></div>
+        <p class="module-note">Send a message when a member leaves. Keep it short and clean for busy servers.</p>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="welcome">
+          <input type="hidden" name="action" value="save_welcome_settings">
+          <input type="hidden" name="save_section" value="leave">
+          <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="leave_enabled"{checked(bool(welcome_settings.get("leave_enabled")))}> Enable leave messages</label>
+          <label>Leave channel</label>
+          <select name="leave_channel_id">{channel_options(guild, welcome_settings.get("leave_channel_id"))}</select>
+          <label>Leave text</label>
+          <textarea name="leave_message_template" maxlength="1800">{esc(welcome_settings.get("leave_message_template") or default_leave_message)}</textarea>
+          <div class="token-list">
+            <code>{'{user}'}</code><code>{'{username}'}</code><code>{'{server}'}</code><code>{'{member_count}'}</code>
+          </div>
+          <div class="button-row"><button class="primary" type="submit">Save leave message</button></div>
+        </form>
+      </div>
+      <div class="card pad span-6">
+        <h2>Leave preview</h2>
+        <p class="module-note">Discord will use the real user and server member count when someone leaves.</p>
+        <div class="welcome-preview">{esc(leave_preview_text)}</div>
       </div>"""
 
     application_section = f"""
@@ -1561,7 +1633,6 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         "move_channel_id": 0,
         "anonymous": False,
         "dm_results": True,
-        "vote_limit": 10,
     }
     suggestions = []
     if support_bot:
@@ -1598,8 +1669,6 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
             <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="anonymous"{checked(bool(suggestion_settings.get("anonymous")))}> Anonymous suggestions</label>
             <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="dm_results"{checked(bool(suggestion_settings.get("dm_results", True)))}> DM users on decisions</label>
           </div>
-          <label>Vote color limit</label>
-          <input name="vote_limit" type="number" min="0" max="500" value="{int(suggestion_settings.get("vote_limit") or 0)}">
           <div class="button-row"><button class="primary" type="submit">Save suggestion settings</button></div>
         </form>
       </div>
@@ -2078,18 +2147,52 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             support_bot = load_support_bot()
             if not support_bot:
                 raise ValueError("Welcomer module is not loaded.")
-            channel_id = int(form_one(form, "welcome_channel_id") or 0)
-            if "enabled" in form and not channel_id:
+            current = support_bot.get_welcome_settings(guild_id)
+            section = form_one(form, "save_section", "welcome")
+            channel_id = (
+                int(form_one(form, "welcome_channel_id") or 0)
+                if section == "welcome"
+                else int(current.get("channel_id") or 0)
+            )
+            leave_channel_id = (
+                int(form_one(form, "leave_channel_id") or 0)
+                if section == "leave"
+                else int(current.get("leave_channel_id") or 0)
+            )
+            welcome_enabled = "enabled" in form if section == "welcome" else bool(current.get("enabled"))
+            leave_enabled = "leave_enabled" in form if section == "leave" else bool(current.get("leave_enabled"))
+            if section == "welcome" and welcome_enabled and not channel_id:
                 raise ValueError("Choose a welcome channel before enabling welcomer.")
+            if section == "leave" and leave_enabled and not leave_channel_id:
+                raise ValueError("Choose a leave channel before enabling leave messages.")
             support_bot.set_welcome_config(
                 guild_id,
-                enabled="enabled" in form,
+                enabled=welcome_enabled,
                 channel_id=channel_id,
-                rules_channel_id=int(form_one(form, "rules_channel_id") or 0),
-                message_template=form_one(form, "message_template", support_bot.DEFAULT_WELCOME_MESSAGE),
-                image_url=form_one(form, "image_url"),
+                rules_channel_id=(
+                    int(form_one(form, "rules_channel_id") or 0)
+                    if section == "welcome"
+                    else int(current.get("rules_channel_id") or 0)
+                ),
+                message_template=(
+                    form_one(form, "message_template", support_bot.DEFAULT_WELCOME_MESSAGE)
+                    if section == "welcome"
+                    else str(current.get("message_template") or support_bot.DEFAULT_WELCOME_MESSAGE)
+                ),
+                image_url=(
+                    form_one(form, "image_url")
+                    if section == "welcome"
+                    else str(current.get("image_url") or "")
+                ),
+                leave_enabled=leave_enabled,
+                leave_channel_id=leave_channel_id,
+                leave_message_template=(
+                    form_one(form, "leave_message_template", support_bot.DEFAULT_LEAVE_MESSAGE)
+                    if section == "leave"
+                    else str(current.get("leave_message_template") or support_bot.DEFAULT_LEAVE_MESSAGE)
+                ),
             )
-            return "Welcomer settings saved."
+            return "Welcome settings saved." if section == "welcome" else "Leave message settings saved."
 
         if action == "save_suggestion_settings":
             support_bot = load_support_bot()
@@ -2102,7 +2205,6 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
                 move_channel_id=int(form_one(form, "suggestion_move_channel_id") or 0),
                 anonymous="anonymous" in form,
                 dm_results="dm_results" in form,
-                vote_limit=max(0, min(500, int(form_one(form, "vote_limit") or 0))),
             )
             return "Suggestion settings saved."
 

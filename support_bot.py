@@ -58,9 +58,12 @@ SUGGESTION_SETTINGS_FILE = DATA_DIR / "suggestion_settings.json"
 SUGGESTIONS_FILE = DATA_DIR / "suggestions.json"
 REACTION_ROLE_PANELS_FILE = DATA_DIR / "reaction_role_panels.json"
 DEFAULT_WELCOME_MESSAGE = (
-    "\U0001f44b | Welcome {user} to {server}!\n\n"
-    "\U0001f4d6 | Please look in {rules_channel} for the rules of the server\n\n"
-    "\U0001f525 | You are member {member_count}!"
+    "\U0001f44b | Welcome {user} to **{server}**, you are member **{member_count}**!\n\n"
+    "\U0001f4d6 | Please look in {rules_channel} for the rules of the server."
+)
+DEFAULT_LEAVE_MESSAGE = (
+    "\U0001f44b | **{username}** has left **{server}**.\n\n"
+    "\U0001f465 | We now have **{member_count}** members."
 )
 
 NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
@@ -446,6 +449,9 @@ def normalize_welcome_settings(record: Any) -> dict[str, Any]:
         "rules_channel_id": parse_user_id(record.get("rules_channel_id")) or 0,
         "message_template": truncate(record.get("message_template") or DEFAULT_WELCOME_MESSAGE, 1800),
         "image_url": str(record.get("image_url") or "").strip()[:500],
+        "leave_enabled": normalize_bool(record.get("leave_enabled"), False),
+        "leave_channel_id": parse_user_id(record.get("leave_channel_id")) or 0,
+        "leave_message_template": truncate(record.get("leave_message_template") or DEFAULT_LEAVE_MESSAGE, 1800),
     }
 
 
@@ -482,7 +488,16 @@ def get_welcome_settings(guild_id: int) -> dict[str, Any]:
 def set_welcome_config(guild_id: int, **updates: Any) -> dict[str, Any]:
     settings = load_welcome_settings()
     guild_settings = get_welcome_settings(guild_id)
-    for key in ("enabled", "channel_id", "rules_channel_id", "message_template", "image_url"):
+    for key in (
+        "enabled",
+        "channel_id",
+        "rules_channel_id",
+        "message_template",
+        "image_url",
+        "leave_enabled",
+        "leave_channel_id",
+        "leave_message_template",
+    ):
         if key in updates:
             guild_settings[key] = updates[key]
     guild_settings = normalize_welcome_settings(guild_settings)
@@ -549,6 +564,45 @@ async def send_welcome_message(member: discord.Member) -> None:
         print(f"Could not send welcome message in {member.guild.id}: {error}", flush=True)
 
 
+def format_leave_text(settings: dict[str, Any], member: discord.Member) -> str:
+    guild = member.guild
+    member_count = guild.member_count or len(getattr(guild, "members", [])) or 0
+    replacements = {
+        "{user}": member.mention,
+        "{username}": member.display_name,
+        "{server}": guild.name,
+        "{member_count}": format_count(member_count),
+    }
+    text = str(settings.get("leave_message_template") or DEFAULT_LEAVE_MESSAGE)
+    for token, value in replacements.items():
+        text = text.replace(token, str(value))
+    return truncate(text, 1900)
+
+
+async def send_leave_message(member: discord.Member) -> None:
+    settings = get_welcome_settings(member.guild.id)
+    if not settings.get("leave_enabled"):
+        return
+    channel_id = parse_user_id(settings.get("leave_channel_id")) or 0
+    if not channel_id:
+        return
+    channel = member.guild.get_channel(channel_id) if channel_id else None
+    if channel is None:
+        try:
+            channel = await member.guild.fetch_channel(channel_id)
+        except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+            return
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        return
+    try:
+        await channel.send(
+            content=format_leave_text(settings, member),
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+    except discord.HTTPException as error:
+        print(f"Could not send leave message in {member.guild.id}: {error}", flush=True)
+
+
 def load_suggestion_settings() -> dict[str, Any]:
     global SUGGESTION_SETTINGS_CACHE
     if SUGGESTION_SETTINGS_CACHE is not None:
@@ -568,7 +622,6 @@ def load_suggestion_settings() -> dict[str, Any]:
             "anonymous": normalize_bool(guild_settings.get("anonymous"), False),
             "dm_results": normalize_bool(guild_settings.get("dm_results"), True),
             "counter": max(0, coerce_int(guild_settings.get("counter", 0))),
-            "vote_limit": max(0, min(500, coerce_int(guild_settings.get("vote_limit", 0)))),
         }
     SUGGESTION_SETTINGS_CACHE = normalized
     return SUGGESTION_SETTINGS_CACHE
@@ -591,7 +644,6 @@ def get_suggestion_settings(guild_id: int) -> dict[str, Any]:
             "anonymous": False,
             "dm_results": True,
             "counter": 0,
-            "vote_limit": 0,
         },
     )
     guild_settings.setdefault("channel_id", 0)
@@ -600,7 +652,6 @@ def get_suggestion_settings(guild_id: int) -> dict[str, Any]:
     guild_settings.setdefault("anonymous", False)
     guild_settings.setdefault("dm_results", True)
     guild_settings.setdefault("counter", 0)
-    guild_settings.setdefault("vote_limit", 0)
     return guild_settings
 
 
@@ -765,7 +816,6 @@ def set_suggestion_config(
     move_channel_id: Optional[int] = None,
     anonymous: Optional[bool] = None,
     dm_results: Optional[bool] = None,
-    vote_limit: Optional[int] = None,
 ) -> dict[str, Any]:
     state = load_suggestion_settings()
     settings = get_suggestion_settings(guild_id)
@@ -779,8 +829,6 @@ def set_suggestion_config(
         settings["anonymous"] = bool(anonymous)
     if dm_results is not None:
         settings["dm_results"] = bool(dm_results)
-    if vote_limit is not None:
-        settings["vote_limit"] = max(0, min(500, int(vote_limit)))
     state.setdefault("guilds", {})[str(guild_id)] = settings
     save_suggestion_settings(state)
     return settings
@@ -1303,14 +1351,6 @@ def suggestion_status_color(suggestion: dict[str, Any]) -> discord.Color:
         return discord.Color.gold()
     if status == "implemented":
         return discord.Color.teal()
-    settings = get_suggestion_settings(int(suggestion.get("guild_id") or 0))
-    limit = coerce_int(settings.get("vote_limit", 0))
-    if limit:
-        diff = len(normalize_id_list(suggestion.get("upvoter_ids"))) - len(normalize_id_list(suggestion.get("downvoter_ids")))
-        if diff >= limit:
-            return discord.Color.green()
-        if diff <= -limit:
-            return discord.Color.red()
     return discord.Color.blurple()
 
 
@@ -2604,15 +2644,6 @@ async def suggestion_dm_slash(interaction: discord.Interaction, enabled: bool) -
     await safe_send(interaction, f"Suggestion result DMs are now {'enabled' if enabled else 'disabled'}.", ephemeral=True)
 
 
-@suggestion_group.command(name="limit", description="Set the vote difference that changes pending suggestion color")
-@app_commands.guild_only()
-async def suggestion_limit_slash(interaction: discord.Interaction, votes: int) -> None:
-    if not await require_application_admin(interaction):
-        return
-    set_suggestion_config(interaction.guild.id, vote_limit=votes)
-    await safe_send(interaction, f"Suggestion vote color limit set to {max(0, min(500, votes))}.", ephemeral=True)
-
-
 @suggestion_group.command(name="server", description="Show this server's suggestion config")
 @app_commands.guild_only()
 async def suggestion_server_slash(interaction: discord.Interaction) -> None:
@@ -2633,7 +2664,6 @@ async def suggestion_server_slash(interaction: discord.Interaction) -> None:
             f"Result copy channel: {f'<#{settings.get('move_channel_id')}>' if settings.get('move_channel_id') else 'disabled'}\n"
             f"Anonymous: **{'on' if settings.get('anonymous') else 'off'}**\n"
             f"DM results: **{'on' if settings.get('dm_results') else 'off'}**\n"
-            f"Vote color limit: **{format_count(settings.get('vote_limit', 0))}**\n"
             f"Stored suggestions: **{format_count(len(guild_suggestions))}** ({format_count(pending)} open)"
         ),
         color=discord.Color.blurple(),
@@ -3191,6 +3221,11 @@ async def on_disconnect() -> None:
 @bot.event
 async def on_member_join(member: discord.Member) -> None:
     await send_welcome_message(member)
+
+
+@bot.event
+async def on_member_remove(member: discord.Member) -> None:
+    await send_leave_message(member)
 
 
 @bot.event

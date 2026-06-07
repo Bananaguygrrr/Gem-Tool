@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import io
 import json
 import os
 import re
@@ -548,36 +547,6 @@ def ticket_channel_name(member: discord.Member, submission_id: str) -> str:
     return truncate(f"app-{base}-{submission_id[:5]}", 90).strip("-")
 
 
-async def build_ticket_transcript(channel: discord.TextChannel, *, limit: int = 250) -> str:
-    lines = [
-        f"Gem Tool application ticket transcript",
-        f"Server: {channel.guild.name} ({channel.guild.id})",
-        f"Channel: #{channel.name} ({channel.id})",
-        f"Closed at: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}",
-        "",
-    ]
-    try:
-        messages = [
-            message
-            async for message in channel.history(limit=limit, oldest_first=True)
-        ]
-    except discord.HTTPException as error:
-        lines.append(f"Could not read channel history: {error}")
-        return "\n".join(lines)
-
-    for message in messages:
-        created = message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
-        author = f"{message.author} ({message.author.id})"
-        content = message.content or ""
-        if message.embeds:
-            content = f"{content}\n[embeds: {len(message.embeds)}]".strip()
-        if message.attachments:
-            attachment_urls = ", ".join(attachment.url for attachment in message.attachments[:5])
-            content = f"{content}\n[attachments: {attachment_urls}]".strip()
-        lines.append(f"[{created}] {author}: {content or '[no text]'}")
-    return "\n".join(lines)
-
-
 def build_ticket_closed_embed(
     guild: discord.Guild,
     panel: Dict[str, Any],
@@ -588,10 +557,10 @@ def build_ticket_closed_embed(
     closed_at = int(submission.get("ticket_closed_at") or utc_now())
     opened_at = int(submission.get("ticket_opened_at") or submission.get("created_at") or closed_at)
     opened_by_id = int(submission.get("ticket_opened_by_id") or submission.get("reviewer_id") or 0)
-    close_reason = reason or "No reason provided, click to view the transcript below."
+    close_reason = reason or "No reason provided."
     embed = discord.Embed(
         title="Ticket Closed",
-        description=f"The ticket from the server **{guild.name}** was closed. The transcript is attached below.",
+        description=f"The ticket from the server **{guild.name}** was closed.",
         color=discord.Color.blue(),
         timestamp=discord.utils.utcnow(),
     )
@@ -611,7 +580,6 @@ async def send_ticket_closed_dm(
     panel: Dict[str, Any],
     submission: Dict[str, Any],
     closer: discord.abc.User,
-    transcript: str,
     reason: str,
 ) -> None:
     if BOT is None:
@@ -622,20 +590,10 @@ async def send_ticket_closed_dm(
         return
 
     embed = build_ticket_closed_embed(guild, panel, submission, closer, reason)
-    filename = f"ticket-{submission.get('id', 'transcript')}.txt"
-    file = discord.File(io.BytesIO(transcript.encode("utf-8", errors="replace")), filename=filename)
     try:
-        sent = await user.send(embed=embed, file=file)
+        await user.send(embed=embed)
     except discord.HTTPException:
         return
-
-    if sent.attachments:
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="View transcript", url=sent.attachments[0].url))
-        try:
-            await sent.edit(view=view)
-        except discord.HTTPException:
-            pass
 
 
 class TicketCloseReasonModal(discord.ui.Modal):
@@ -720,7 +678,6 @@ async def close_application_ticket(
         return
 
     await interaction.response.defer(ephemeral=True, thinking=True)
-    transcript = await build_ticket_transcript(channel)
     closed_at = utc_now()
     submission["ticket_closed_at"] = closed_at
     submission["ticket_closed_by_id"] = interaction.user.id
@@ -728,8 +685,8 @@ async def close_application_ticket(
     submission["ticket_channel_name"] = channel.name
     save_state()
 
-    await send_ticket_closed_dm(interaction.guild, panel, submission, interaction.user, transcript, reason)
-    await interaction.followup.send("Ticket transcript saved. Closing ticket in 2 seconds...", ephemeral=True)
+    await send_ticket_closed_dm(interaction.guild, panel, submission, interaction.user, reason)
+    await interaction.followup.send("Ticket closed. Closing channel in 2 seconds...", ephemeral=True)
     try:
         await channel.send("Closing ticket in 2 seconds...")
     except discord.HTTPException:
@@ -738,7 +695,7 @@ async def close_application_ticket(
     try:
         await channel.delete(reason=f"Application ticket closed by {interaction.user} ({interaction.user.id})")
     except discord.HTTPException as error:
-        await interaction.followup.send(f"I saved the transcript but could not delete the channel: `{truncate(error, 160)}`", ephemeral=True)
+        await interaction.followup.send(f"I could not delete the channel: `{truncate(error, 160)}`", ephemeral=True)
 
 
 async def open_application_ticket(interaction: discord.Interaction, guild_id: int, submission_id: str) -> None:
