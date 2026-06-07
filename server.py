@@ -147,6 +147,16 @@ def fmt_count(value: Any) -> str:
         return str(value or 0)
 
 
+def format_timestamp(value: Any) -> str:
+    try:
+        timestamp = int(value or 0)
+    except (TypeError, ValueError):
+        timestamp = 0
+    if timestamp <= 0:
+        return "Unknown"
+    return datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
@@ -703,6 +713,13 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       padding: 9px 0;
       text-align: left;
     }}
+    .mini-table tr.active-row td {{
+      background: rgba(41,245,210,.065);
+    }}
+    .mini-table a {{
+      color: var(--cyan);
+      text-decoration: none;
+    }}
     .feature-tabs {{
       display: flex;
       flex-wrap: wrap;
@@ -751,6 +768,15 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       background: rgba(0,0,0,.18);
       padding: 14px;
       margin-top: 12px;
+    }}
+    .answer-box {{
+      border-radius: 12px;
+      background: rgba(3, 6, 12, .48);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 12px;
+      color: var(--muted);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }}
     .overview-hero {{
       display: grid;
@@ -1111,6 +1137,7 @@ def dashboard_tab_nav(guild_id: int, active_tab: str) -> str:
     tabs = [
         ("overview", "Overview"),
         ("applications", "Applications"),
+        ("submissions", "Submissions"),
         ("giveaways", "Giveaways"),
         ("suggestions", "Suggestions"),
         ("reaction-roles", "Reaction Roles"),
@@ -1126,6 +1153,119 @@ def role_badges(guild: Any, role_ids: list[int]) -> str:
     if not role_ids:
         return '<span>None</span>'
     return "".join(f"<span>@{esc(role_name(guild, role_id))}</span>" for role_id in role_ids)
+
+
+def submission_status_label(submission: dict[str, Any]) -> str:
+    status = str(submission.get("status") or "pending").title()
+    if submission.get("ticket_closed_at"):
+        return f"{status} / Ticket Closed"
+    if submission.get("ticket_channel_id"):
+        return f"{status} / Ticket Open"
+    return status
+
+
+def render_submission_answers(submission: dict[str, Any]) -> str:
+    answers = submission.get("answers", [])
+    if not answers:
+        return '<p class="muted">No answers were saved for this submission.</p>'
+    rows = []
+    for index, answer in enumerate(answers, start=1):
+        rows.append(
+            f"""
+            <div class="subtle-card">
+              <h4 style="margin: 0 0 8px;">{index}. {esc(answer.get("question") or f"Question {index}")}</h4>
+              <div class="answer-box">{esc(answer.get("answer") or "No answer")}</div>
+            </div>"""
+        )
+    return "".join(rows)
+
+
+def render_submission_overview(
+    guild_id: int,
+    panels: dict[str, Any],
+    submissions: dict[str, Any],
+    selected_submission_id: str,
+) -> str:
+    sorted_submissions = sorted(
+        submissions.items(),
+        key=lambda item: int(item[1].get("created_at") or 0),
+        reverse=True,
+    )
+    selected_submission = submissions.get(selected_submission_id) if selected_submission_id else None
+    if not selected_submission and sorted_submissions:
+        selected_submission_id, selected_submission = sorted_submissions[0]
+
+    table_rows = []
+    for submission_id, submission in sorted_submissions[:80]:
+        panel_key = str(submission.get("panel_key") or "")
+        panel = panels.get(panel_key, {})
+        panel_name = panel.get("name") or panel_key or "Application"
+        active_class = " active-row" if submission_id == selected_submission_id else ""
+        submitted_label = format_timestamp(submission.get("created_at"))
+        table_rows.append(
+            f"""
+            <tr class="{active_class}">
+              <td><a href="/applications?guild_id={guild_id}&tab=submissions&submission_id={esc(submission_id)}"><code>{esc(submission_id)}</code></a></td>
+              <td>{esc(submission.get("username") or submission.get("user_id") or "Unknown")}</td>
+              <td>{esc(panel_name)}</td>
+              <td>{esc(submission_status_label(submission))}</td>
+              <td><span class="muted">{submitted_label}</span></td>
+            </tr>"""
+        )
+    rows_html = "".join(table_rows) or '<tr><td colspan="5" class="muted">No applications have been submitted yet.</td></tr>'
+
+    if selected_submission:
+        panel_key = str(selected_submission.get("panel_key") or "")
+        panel = panels.get(panel_key, {})
+        panel_name = str(panel.get("name") or panel_key or "Application")
+        created_at = format_timestamp(selected_submission.get("created_at"))
+        review_link = ""
+        if selected_submission.get("review_channel_id") and selected_submission.get("review_message_id"):
+            review_link = (
+                f'<a class="button" target="_blank" rel="noopener" '
+                f'href="https://discord.com/channels/{guild_id}/{int(selected_submission["review_channel_id"])}/{int(selected_submission["review_message_id"])}">'
+                "Open Discord review</a>"
+            )
+        ticket_note = ""
+        if selected_submission.get("ticket_closed_at"):
+            ticket_note = f'<span class="pill">Ticket closed {esc(format_timestamp(selected_submission.get("ticket_closed_at")))}</span>'
+        elif selected_submission.get("ticket_channel_id"):
+            ticket_note = '<span class="pill">Ticket open</span>'
+        detail = f"""
+        <div class="card pad span-7">
+          <div class="section-title">
+            <div>
+              <span class="pill">Submission detail</span>
+              <h2 style="margin: 10px 0 2px;">{esc(selected_submission.get("username") or "Unknown applicant")}</h2>
+              <p class="muted" style="margin: 0;">{esc(panel_name)} - {esc(submission_status_label(selected_submission))}</p>
+            </div>
+            {ticket_note}
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card"><span>Submitted</span><b style="font-size:18px;">{esc(created_at)}</b></div>
+            <div class="metric-card"><span>Duration</span><b style="font-size:18px;">{esc(application_system.format_duration(int(selected_submission.get("duration_seconds") or 0)))}</b></div>
+            <div class="metric-card"><span>User ID</span><b style="font-size:18px;">{esc(selected_submission.get("user_id") or "Unknown")}</b></div>
+          </div>
+          {render_submission_answers(selected_submission)}
+          <div class="button-row">{review_link}</div>
+        </div>"""
+    else:
+        detail = """
+        <div class="card pad span-7">
+          <h2>Submission detail</h2>
+          <p class="muted">Select an application from the table to view the saved answers.</p>
+        </div>"""
+
+    return f"""
+      <div class="card pad span-5">
+        <div class="section-title"><h2>Applications overview</h2><span class="pill">{fmt_count(len(submissions))} saved</span></div>
+        <p class="module-note">Review every saved submission from this server. Discord buttons still handle accept, deny, history, and ticket actions.</p>
+        <table class="mini-table">
+          <thead><tr><th>ID</th><th>User</th><th>Panel</th><th>Status</th><th>Submitted</th></tr></thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+      </div>
+      {detail}"""
 
 
 def reaction_panel_options(panels: dict[str, Any], selected_id: str = "") -> str:
@@ -1155,12 +1295,14 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         return render_server_selection(session, {"error": ["That server is not available. Is Gem Tool invited and online?"]})
 
     tab = form_one(query, "tab", "overview").lower().replace("_", "-")
-    valid_tabs = {"overview", "applications", "giveaways", "suggestions", "reaction-roles", "welcome"}
+    valid_tabs = {"overview", "applications", "submissions", "giveaways", "suggestions", "reaction-roles", "welcome"}
     if tab not in valid_tabs:
         tab = "overview"
     tab_input = f'<input type="hidden" name="tab" value="{esc(tab)}">'
     guild_state = application_system.get_guild_state(guild_id)
     panels = guild_state.setdefault("panels", {})
+    submissions = guild_state.setdefault("submissions", {})
+    selected_submission_id = form_one(query, "submission_id")
 
     panel_cards = []
     for panel_key, panel in sorted(panels.items()):
@@ -1296,12 +1438,15 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         <div class="section-title"><h2>Modules</h2><span class="pill">Configure this server</span></div>
         <div class="module-grid">
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=applications"><b>Applications</b><span class="muted">Panels, questions, logs, tickets, accepted roles.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=submissions"><b>Submissions</b><span class="muted">Saved answers, timing, review links, and ticket status.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=giveaways"><b>Giveaways</b><span class="muted">Role access and stored active/ended giveaway data.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=suggestions"><b>Suggestions</b><span class="muted">Channels, voting, anonymous mode, moderator decisions.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=reaction-roles"><b>Reaction Roles</b><span class="muted">Button-based role panels users can toggle.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=welcome"><b>Welcomer</b><span class="muted">Welcome text, rules channel, member count, and image.</span></a>
         </div>
       </div>"""
+
+    submissions_section = render_submission_overview(guild_id, panels, submissions, selected_submission_id)
 
     welcome_section = f"""
       <div class="card pad span-6">
@@ -1584,6 +1729,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
     active_section = {
         "overview": overview_section,
         "applications": application_section,
+        "submissions": submissions_section,
         "giveaways": giveaway_section,
         "suggestions": suggestion_section,
         "reaction-roles": reaction_role_section,
@@ -1793,7 +1939,7 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
 
         action = form_one(form, "action")
         tab = form_one(form, "tab", "overview").lower().replace("_", "-")
-        if tab not in {"overview", "applications", "giveaways", "suggestions", "reaction-roles", "welcome"}:
+        if tab not in {"overview", "applications", "submissions", "giveaways", "suggestions", "reaction-roles", "welcome"}:
             tab = "overview"
         try:
             ok_message = self._apply_dashboard_action(guild_id, action, form)
