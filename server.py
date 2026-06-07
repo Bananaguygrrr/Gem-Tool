@@ -354,6 +354,45 @@ def role_options(guild: Any, selected_id: Any = "", *, include_blank: bool = Tru
     return "\n".join(options)
 
 
+EMOJI_PICKER_VALUES = [
+    "\U0001f381",
+    "\u2753",
+    "\U0001f4e3",
+    "\U0001f4b8",
+    "\U0001f4c8",
+    "\U0001f48e",
+    "\U0001f525",
+    "\U0001f44b",
+    "\U0001f4d6",
+    "\U0001f52d",
+    "\u2705",
+    "\u274c",
+    "\u2764\ufe0f",
+    "\u2b50",
+    "\U0001f389",
+    "\U0001f6e1\ufe0f",
+    "\U0001f6e0\ufe0f",
+    "\u26a1",
+    "\u2620\ufe0f",
+    "\U0001f440",
+]
+
+
+def emoji_picker(target_id: str, *, replace: bool = False) -> str:
+    mode = "replace" if replace else "insert"
+    buttons = "".join(
+        f'<button class="emoji-choice" type="button" data-emoji-target="{esc(target_id)}" '
+        f'data-emoji-mode="{mode}" data-emoji-value="{esc(emoji)}">{esc(emoji)}</button>'
+        for emoji in EMOJI_PICKER_VALUES
+    )
+    return (
+        '<details class="emoji-picker">'
+        '<summary>Add emoji</summary>'
+        f'<div class="emoji-grid">{buttons}</div>'
+        '</details>'
+    )
+
+
 def multi_role_options(guild: Any, selected_ids: list[int]) -> str:
     selected_set = {str(role_id) for role_id in selected_ids}
     roles = [
@@ -865,12 +904,38 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       line-height: 1.52;
       color: var(--text);
     }}
-    .welcome-image-preview {{
-      margin-top: 12px;
-      max-width: 100%;
+    .emoji-picker {{
+      margin-top: 10px;
+      border: 1px solid var(--line);
       border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.14);
-      background: rgba(0,0,0,.2);
+      background: rgba(255,255,255,.045);
+      padding: 10px;
+    }}
+    .emoji-picker summary {{
+      cursor: pointer;
+      color: var(--aqua);
+      font-weight: 950;
+      user-select: none;
+    }}
+    .emoji-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+      gap: 7px;
+      margin-top: 10px;
+    }}
+    .emoji-choice {{
+      min-height: 38px;
+      padding: 6px;
+      border-radius: 10px;
+      font-size: 20px;
+      line-height: 1;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.12);
+    }}
+    .emoji-choice:hover {{
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      background: rgba(41,245,210,.12);
     }}
     .token-list {{
       display: flex;
@@ -981,6 +1046,27 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     <span>{esc(APP_NAME)} for Discord communities.</span>
     <span><a href="/terms">Terms</a><a href="/privacy">Privacy Policy</a></span>
   </footer>
+  <script>
+    document.addEventListener("click", (event) => {{
+      const button = event.target.closest("[data-emoji-value]");
+      if (!button) return;
+      const target = document.getElementById(button.dataset.emojiTarget);
+      if (!target) return;
+      const emoji = button.dataset.emojiValue || "";
+      const mode = button.dataset.emojiMode || "insert";
+      target.focus();
+      if (mode === "replace" || target.tagName !== "TEXTAREA") {{
+        target.value = emoji;
+        target.dispatchEvent(new Event("input", {{ bubbles: true }}));
+        return;
+      }}
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? target.value.length;
+      target.value = target.value.slice(0, start) + emoji + target.value.slice(end);
+      target.selectionStart = target.selectionEnd = start + emoji.length;
+      target.dispatchEvent(new Event("input", {{ bubbles: true }}));
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -1427,7 +1513,6 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         "channel_id": 0,
         "rules_channel_id": 0,
         "message_template": default_welcome_message,
-        "image_url": "",
         "leave_enabled": False,
         "leave_channel_id": 0,
         "leave_message_template": default_leave_message,
@@ -1445,12 +1530,6 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         "{rules}": rules_label,
     }.items():
         preview_text = preview_text.replace(token, str(value))
-    welcome_image_url = str(welcome_settings.get("image_url") or "").strip()
-    welcome_image_preview = (
-        f'<img class="welcome-image-preview" src="{esc(welcome_image_url)}" alt="Welcome image preview">'
-        if welcome_image_url
-        else ""
-    )
     leave_preview_text = str(welcome_settings.get("leave_message_template") or default_leave_message)
     for token, value in {
         "{user}": "@LeavingMember",
@@ -1490,7 +1569,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=giveaways"><b>Giveaways</b><span class="muted">Role access and stored active/ended giveaway data.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=suggestions"><b>Suggestions</b><span class="muted">Channels, voting, anonymous mode, moderator decisions.</span></a>
           <a class="module-card" href="/applications?guild_id={guild_id}&tab=reaction-roles"><b>Reaction Roles</b><span class="muted">Button-based role panels users can toggle.</span></a>
-          <a class="module-card" href="/applications?guild_id={guild_id}&tab=welcome"><b>Welcomer</b><span class="muted">Welcome and leave text, rules channel, member count, and image.</span></a>
+          <a class="module-card" href="/applications?guild_id={guild_id}&tab=welcome"><b>Welcomer</b><span class="muted">Welcome and leave text, rules channel, and member count.</span></a>
         </div>
       </div>"""
 
@@ -1510,12 +1589,11 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <label>Rules channel, optional</label>
           <select name="rules_channel_id">{channel_options(guild, welcome_settings.get("rules_channel_id"))}</select>
           <label>Welcome text</label>
-          <textarea name="message_template" maxlength="1800">{esc(welcome_settings.get("message_template") or default_welcome_message)}</textarea>
+          <textarea id="welcome-message-template" name="message_template" maxlength="1800">{esc(welcome_settings.get("message_template") or default_welcome_message)}</textarea>
+          {emoji_picker("welcome-message-template")}
           <div class="token-list">
             <code>{'{user}'}</code><code>{'{username}'}</code><code>{'{server}'}</code><code>{'{member_count}'}</code><code>{'{rules_channel}'}</code>
           </div>
-          <label>Welcome image URL, optional</label>
-          <input name="image_url" maxlength="500" value="{esc(welcome_image_url)}" placeholder="https://...">
           <div class="button-row"><button class="primary" type="submit">Save welcomer</button></div>
         </form>
       </div>
@@ -1523,7 +1601,6 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         <h2>Welcome preview</h2>
         <p class="module-note">This is only a preview. Discord will use real member mentions and counts when someone joins.</p>
         <div class="welcome-preview">{esc(preview_text)}</div>
-        {welcome_image_preview}
       </div>
       <div class="card pad span-6">
         <div class="section-title"><h2>Leave message</h2><span class="pill">{'Enabled' if welcome_settings.get('leave_enabled') else 'Disabled'}</span></div>
@@ -1536,7 +1613,8 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <label>Leave channel</label>
           <select name="leave_channel_id">{channel_options(guild, welcome_settings.get("leave_channel_id"))}</select>
           <label>Leave text</label>
-          <textarea name="leave_message_template" maxlength="1800">{esc(welcome_settings.get("leave_message_template") or default_leave_message)}</textarea>
+          <textarea id="leave-message-template" name="leave_message_template" maxlength="1800">{esc(welcome_settings.get("leave_message_template") or default_leave_message)}</textarea>
+          {emoji_picker("leave-message-template")}
           <div class="token-list">
             <code>{'{user}'}</code><code>{'{username}'}</code><code>{'{server}'}</code><code>{'{member_count}'}</code>
           </div>
@@ -1782,7 +1860,8 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
             </div>
             <div>
               <label>Emoji</label>
-              <input name="emoji" maxlength="32" placeholder="gift">
+              <input id="reaction-role-emoji" name="emoji" maxlength="32" placeholder="\U0001f381">
+              {emoji_picker("reaction-role-emoji", replace=True)}
             </div>
           </div>
           <label>Button text</label>
@@ -2178,11 +2257,6 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
                     form_one(form, "message_template", support_bot.DEFAULT_WELCOME_MESSAGE)
                     if section == "welcome"
                     else str(current.get("message_template") or support_bot.DEFAULT_WELCOME_MESSAGE)
-                ),
-                image_url=(
-                    form_one(form, "image_url")
-                    if section == "welcome"
-                    else str(current.get("image_url") or "")
                 ),
                 leave_enabled=leave_enabled,
                 leave_channel_id=leave_channel_id,

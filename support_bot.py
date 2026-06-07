@@ -43,6 +43,9 @@ COMMAND_SYNC_MODE = os.getenv("COMMAND_SYNC_MODE", "global").strip().lower()
 COMMAND_SYNC_GUILD_ID = os.getenv("COMMAND_SYNC_GUILD_ID", "").strip()
 
 GIVEAWAY_EMOJI = os.getenv("GIVEAWAY_EMOJI", "\U0001f389").strip() or "\U0001f389"
+DEFAULT_OWNER_ID = 1105451323584938075
+SUGGESTION_UP_EMOJI = "\u2b06\ufe0f"
+SUGGESTION_DOWN_EMOJI = "\u2b07\ufe0f"
 GIVEAWAY_CHECK_INTERVAL_SECONDS = max(10, int(os.getenv("GIVEAWAY_CHECK_INTERVAL_SECONDS", "20")))
 GIVEAWAY_MIN_DURATION_SECONDS = 60
 GIVEAWAY_MAX_DURATION_SECONDS = 60 * 60 * 24 * 30
@@ -76,6 +79,7 @@ intents.guilds = True
 intents.members = True
 intents.messages = True
 intents.message_content = True
+intents.reactions = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -201,10 +205,15 @@ async def refresh_application_owner_ids() -> set[int]:
 
 
 async def is_application_owner(user_id: int) -> bool:
-    if user_id in APPLICATION_OWNER_IDS:
+    owner_override = (
+        parse_user_id(os.getenv("OWNER_ID"))
+        or parse_user_id(os.getenv("BOT_OWNER_ID"))
+        or DEFAULT_OWNER_ID
+    )
+    if user_id == owner_override or user_id in APPLICATION_OWNER_IDS:
         return True
     owner_ids = await refresh_application_owner_ids()
-    return user_id in owner_ids
+    return user_id == owner_override or user_id in owner_ids
 
 
 async def safe_send(
@@ -448,7 +457,6 @@ def normalize_welcome_settings(record: Any) -> dict[str, Any]:
         "channel_id": parse_user_id(record.get("channel_id")) or 0,
         "rules_channel_id": parse_user_id(record.get("rules_channel_id")) or 0,
         "message_template": truncate(record.get("message_template") or DEFAULT_WELCOME_MESSAGE, 1800),
-        "image_url": str(record.get("image_url") or "").strip()[:500],
         "leave_enabled": normalize_bool(record.get("leave_enabled"), False),
         "leave_channel_id": parse_user_id(record.get("leave_channel_id")) or 0,
         "leave_message_template": truncate(record.get("leave_message_template") or DEFAULT_LEAVE_MESSAGE, 1800),
@@ -493,7 +501,6 @@ def set_welcome_config(guild_id: int, **updates: Any) -> dict[str, Any]:
         "channel_id",
         "rules_channel_id",
         "message_template",
-        "image_url",
         "leave_enabled",
         "leave_channel_id",
         "leave_message_template",
@@ -549,15 +556,9 @@ async def send_welcome_message(member: discord.Member) -> None:
             return
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         return
-    image_url = str(settings.get("image_url") or "").strip()
-    embed = None
-    if image_url:
-        embed = discord.Embed(color=discord.Color.from_rgb(66, 245, 215))
-        embed.set_image(url=image_url)
     try:
         await channel.send(
             content=format_welcome_text(settings, member),
-            embed=embed,
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
     except discord.HTTPException as error:
@@ -1400,7 +1401,9 @@ async def update_suggestion_message(suggestion_key: str) -> bool:
     if not message:
         return False
     try:
-        await message.edit(embed=build_suggestion_embed(suggestion), view=SuggestionVoteView(suggestion_key))
+        await message.edit(embed=build_suggestion_embed(suggestion), view=None)
+        if suggestion.get("status") in {"pending", "considered"}:
+            await ensure_suggestion_reactions(message)
         return True
     except discord.HTTPException as error:
         print(f"Could not update suggestion {suggestion_key}: {error}")
@@ -1408,16 +1411,87 @@ async def update_suggestion_message(suggestion_key: str) -> bool:
 
 
 def register_suggestion_view(suggestion_key: str) -> None:
-    if suggestion_key in REGISTERED_SUGGESTION_VIEW_IDS:
-        return
-    bot.add_view(SuggestionVoteView(suggestion_key))
-    REGISTERED_SUGGESTION_VIEW_IDS.add(suggestion_key)
+    return
 
 
 def restore_suggestion_views() -> None:
-    for suggestion_key, suggestion in load_suggestions().items():
-        if suggestion.get("status") in {"pending", "considered"} and suggestion.get("message_id"):
-            register_suggestion_view(suggestion_key)
+    REGISTERED_SUGGESTION_VIEW_IDS.clear()
+
+
+def suggestion_reaction_direction(emoji: Any) -> Optional[str]:
+    text = str(emoji or "").replace("\ufe0f", "")
+    if text == SUGGESTION_UP_EMOJI.replace("\ufe0f", ""):
+        return "up"
+    if text == SUGGESTION_DOWN_EMOJI.replace("\ufe0f", ""):
+        return "down"
+    return None
+
+
+def find_suggestion_by_message(guild_id: int, message_id: int) -> tuple[Optional[str], Optional[dict[str, Any]]]:
+    for key, suggestion in load_suggestions().items():
+        if int(suggestion.get("guild_id") or 0) == guild_id and int(suggestion.get("message_id") or 0) == message_id:
+            return key, suggestion
+    return None, None
+
+
+async def ensure_suggestion_reactions(message: discord.Message) -> None:
+    for emoji in (SUGGESTION_UP_EMOJI, SUGGESTION_DOWN_EMOJI):
+        try:
+            await message.add_reaction(emoji)
+        except discord.HTTPException:
+            pass
+
+
+async def refresh_active_suggestion_messages() -> None:
+    for suggestion_key, suggestion in list(load_suggestions().items()):
+        if suggestion.get("status") not in {"pending", "considered"} or not suggestion.get("message_id"):
+            continue
+        await update_suggestion_message(suggestion_key)
+
+
+async def record_suggestion_reaction_vote(
+    payload: discord.RawReactionActionEvent,
+    *,
+    added: bool,
+) -> None:
+    if payload.guild_id is None or payload.user_id == getattr(bot.user, "id", None):
+        return
+    direction = suggestion_reaction_direction(payload.emoji)
+    if not direction:
+        return
+    suggestion_key, suggestion = find_suggestion_by_message(int(payload.guild_id), int(payload.message_id))
+    if not suggestion_key or not suggestion:
+        return
+    if suggestion.get("status") not in {"pending", "considered"}:
+        return
+    suggestions = load_suggestions()
+    upvoters = set(normalize_id_list(suggestion.get("upvoter_ids")))
+    downvoters = set(normalize_id_list(suggestion.get("downvoter_ids")))
+    target = upvoters if direction == "up" else downvoters
+    other = downvoters if direction == "up" else upvoters
+    user_id = int(payload.user_id)
+    if added:
+        target.add(user_id)
+        other.discard(user_id)
+    else:
+        target.discard(user_id)
+    suggestion["upvoter_ids"] = sorted(upvoters)
+    suggestion["downvoter_ids"] = sorted(downvoters)
+    suggestions[suggestion_key] = suggestion
+    save_suggestions(suggestions)
+
+    if added:
+        opposite = SUGGESTION_DOWN_EMOJI if direction == "up" else SUGGESTION_UP_EMOJI
+        try:
+            message = await fetch_suggestion_message(suggestion)
+            guild = bot.get_guild(int(payload.guild_id))
+            user = guild.get_member(user_id) if guild else None
+            if user is None:
+                user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+            if message and user:
+                await message.remove_reaction(opposite, user)
+        except discord.HTTPException:
+            pass
 
 
 async def post_new_suggestion(interaction: discord.Interaction, content: str) -> tuple[bool, str]:
@@ -1433,8 +1507,17 @@ async def post_new_suggestion(interaction: discord.Interaction, content: str) ->
     if not isinstance(target_channel, discord.TextChannel):
         return False, "Suggestion channel not found. Ask an admin to run `/suggestion channel`."
     perms = target_channel.permissions_for(interaction.guild.me) if interaction.guild.me else None
-    if not perms or not (perms.view_channel and perms.send_messages and perms.embed_links):
-        return False, f"I need View Channel, Send Messages, and Embed Links in {target_channel.mention}."
+    if not perms or not (
+        perms.view_channel
+        and perms.send_messages
+        and perms.embed_links
+        and perms.add_reactions
+        and perms.read_message_history
+    ):
+        return False, (
+            f"I need View Channel, Send Messages, Embed Links, Add Reactions, "
+            f"and Read Message History in {target_channel.mention}."
+        )
 
     settings["counter"] = max(0, coerce_int(settings.get("counter", 0))) + 1
     number = settings["counter"]
@@ -1465,11 +1548,11 @@ async def post_new_suggestion(interaction: discord.Interaction, content: str) ->
     save_suggestion_settings(settings_state)
     save_suggestions(suggestions)
 
-    message = await target_channel.send(embed=build_suggestion_embed(suggestion), view=SuggestionVoteView(suggestion_key))
+    message = await target_channel.send(embed=build_suggestion_embed(suggestion))
     suggestion["message_id"] = message.id
     suggestions[suggestion_key] = suggestion
     save_suggestions(suggestions)
-    register_suggestion_view(suggestion_key)
+    await ensure_suggestion_reactions(message)
     return True, f"Suggestion #{number} posted in {target_channel.mention}."
 
 
@@ -1535,67 +1618,6 @@ async def set_suggestion_status(
     await notify_suggestion_author(suggestion, status, suggestion["status_reason"])
     await announce_suggestion_status(suggestion)
     await safe_send(interaction, f"Suggestion #{suggestion.get('number')} marked as {status}.", ephemeral=True)
-
-
-class SuggestionVoteView(discord.ui.View):
-    def __init__(self, suggestion_key: str):
-        super().__init__(timeout=None)
-        self.suggestion_key = suggestion_key
-        suggestion = load_suggestions().get(suggestion_key, {})
-        up_count = len(normalize_id_list(suggestion.get("upvoter_ids")))
-        down_count = len(normalize_id_list(suggestion.get("downvoter_ids")))
-        up_button = discord.ui.Button(
-            label=format_count(up_count),
-            emoji="\u2b06\ufe0f",
-            style=discord.ButtonStyle.primary,
-            custom_id=f"suggestion:up:{suggestion_key}",
-        )
-        down_button = discord.ui.Button(
-            label=format_count(down_count),
-            emoji="\u2b07\ufe0f",
-            style=discord.ButtonStyle.primary,
-            custom_id=f"suggestion:down:{suggestion_key}",
-        )
-        up_button.callback = self.upvote
-        down_button.callback = self.downvote
-        self.add_item(up_button)
-        self.add_item(down_button)
-
-    async def _vote(self, interaction: discord.Interaction, direction: str) -> None:
-        suggestions = load_suggestions()
-        suggestion = suggestions.get(self.suggestion_key)
-        if not suggestion:
-            await safe_send(interaction, "Suggestion not found.", ephemeral=True)
-            return
-        if suggestion.get("status") not in {"pending", "considered"}:
-            await safe_send(interaction, "Voting is closed for this suggestion.", ephemeral=True)
-            return
-        user_id = interaction.user.id
-        upvoters = set(normalize_id_list(suggestion.get("upvoter_ids")))
-        downvoters = set(normalize_id_list(suggestion.get("downvoter_ids")))
-        target = upvoters if direction == "up" else downvoters
-        other = downvoters if direction == "up" else upvoters
-        if user_id in target:
-            target.remove(user_id)
-            message = "Your vote was removed."
-        else:
-            target.add(user_id)
-            other.discard(user_id)
-            message = "Your vote was counted."
-        suggestion["upvoter_ids"] = sorted(upvoters)
-        suggestion["downvoter_ids"] = sorted(downvoters)
-        suggestions[self.suggestion_key] = suggestion
-        save_suggestions(suggestions)
-        try:
-            await interaction.response.edit_message(embed=build_suggestion_embed(suggestion), view=SuggestionVoteView(self.suggestion_key))
-        except discord.HTTPException:
-            await safe_send(interaction, message, ephemeral=True)
-
-    async def upvote(self, interaction: discord.Interaction) -> None:
-        await self._vote(interaction, "up")
-
-    async def downvote(self, interaction: discord.Interaction) -> None:
-        await self._vote(interaction, "down")
 
 
 def build_reaction_role_embed(panel: dict[str, Any]) -> discord.Embed:
@@ -3200,6 +3222,7 @@ async def on_ready() -> None:
     restore_suggestion_views()
     restore_reaction_role_views()
     owner_ids = await refresh_application_owner_ids()
+    asyncio.create_task(refresh_active_suggestion_messages())
     if not giveaway_end_task.is_running():
         giveaway_end_task.start()
     presence_url = PUBLIC_BASE_URL.removeprefix("https://").removeprefix("http://").rstrip("/")
@@ -3226,6 +3249,16 @@ async def on_member_join(member: discord.Member) -> None:
 @bot.event
 async def on_member_remove(member: discord.Member) -> None:
     await send_leave_message(member)
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent) -> None:
+    await record_suggestion_reaction_vote(payload, added=True)
+
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent) -> None:
+    await record_suggestion_reaction_vote(payload, added=False)
 
 
 @bot.event
