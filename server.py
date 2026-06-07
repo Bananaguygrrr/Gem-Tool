@@ -354,41 +354,155 @@ def role_options(guild: Any, selected_id: Any = "", *, include_blank: bool = Tru
     return "\n".join(options)
 
 
-EMOJI_PICKER_VALUES = [
-    "\U0001f381",
-    "\u2753",
-    "\U0001f4e3",
-    "\U0001f4b8",
-    "\U0001f4c8",
-    "\U0001f48e",
-    "\U0001f525",
-    "\U0001f44b",
-    "\U0001f4d6",
-    "\U0001f52d",
-    "\u2705",
-    "\u274c",
-    "\u2764\ufe0f",
-    "\u2b50",
-    "\U0001f389",
-    "\U0001f6e1\ufe0f",
-    "\U0001f6e0\ufe0f",
-    "\u26a1",
-    "\u2620\ufe0f",
-    "\U0001f440",
+EMOJI_PICKER_GROUPS = [
+    (
+        "Frequently Used",
+        [
+            "\U0001f381", "\U0001f389", "\u2753", "\U0001f4e3", "\U0001f4b8", "\U0001f4c8",
+            "\U0001f48e", "\U0001f525", "\U0001f44b", "\U0001f4d6", "\U0001f52d", "\u2705",
+            "\u274c", "\u2764\ufe0f", "\u2b50", "\U0001f6e1\ufe0f", "\U0001f6e0\ufe0f", "\u26a1",
+            "\u2620\ufe0f", "\U0001f440",
+        ],
+    ),
+    (
+        "Smileys & Emotion",
+        [
+            "\U0001f600", "\U0001f603", "\U0001f604", "\U0001f601", "\U0001f606", "\U0001f605",
+            "\U0001f923", "\U0001f602", "\U0001f642", "\U0001f643", "\U0001f609", "\U0001f60a",
+            "\U0001f607", "\U0001f970", "\U0001f60d", "\U0001f929", "\U0001f618", "\U0001f617",
+            "\U0001f61c", "\U0001f92a", "\U0001f61d", "\U0001f911", "\U0001f917", "\U0001f92d",
+            "\U0001f914", "\U0001f910", "\U0001f928", "\U0001f610", "\U0001f611", "\U0001f636",
+            "\U0001f60f", "\U0001f612", "\U0001f644", "\U0001f62c", "\U0001f62e\U0000200d\U0001f4a8",
+            "\U0001f925", "\U0001f60c", "\U0001f614", "\U0001f62a", "\U0001f924", "\U0001f634",
+            "\U0001f637", "\U0001f912", "\U0001f915", "\U0001f922", "\U0001f92e", "\U0001f927",
+            "\U0001f975", "\U0001f976", "\U0001f974", "\U0001f635", "\U0001f92f", "\U0001f920",
+            "\U0001f973", "\U0001f978", "\U0001f60e", "\U0001f9d0", "\U0001f615", "\U0001f61f",
+            "\U0001f641", "\U00002639\ufe0f", "\U0001f62e", "\U0001f62f", "\U0001f632", "\U0001f633",
+            "\U0001f97a", "\U0001f626", "\U0001f627", "\U0001f628", "\U0001f630", "\U0001f625",
+            "\U0001f622", "\U0001f62d", "\U0001f631", "\U0001f616", "\U0001f623", "\U0001f61e",
+            "\U0001f613", "\U0001f629", "\U0001f62b", "\U0001f971", "\U0001f624", "\U0001f621",
+            "\U0001f620", "\U0001f92c", "\U0001f608", "\U0001f47f", "\U0001f480", "\U0001f4a9",
+        ],
+    ),
+    (
+        "People & Hands",
+        [
+            "\U0001f44d", "\U0001f44e", "\U0001f44a", "\u270a", "\U0001f44b", "\U0001f91a",
+            "\U0001f590\ufe0f", "\u270b", "\U0001f596", "\U0001f44c", "\U0001f90c", "\U0001f90f",
+            "\u270c\ufe0f", "\U0001f91e", "\U0001f91f", "\U0001f918", "\U0001f919", "\U0001f448",
+            "\U0001f449", "\U0001f446", "\U0001f595", "\U0001f447", "\u261d\ufe0f", "\U0001faf5",
+            "\U0001faf6", "\U0001f44f", "\U0001f64c", "\U0001faf6", "\U0001f932", "\U0001f64f",
+            "\U0001f4aa", "\U0001f9e0", "\U0001f9d1", "\U0001f468", "\U0001f469", "\U0001f9d1\U0000200d\U0001f4bb",
+            "\U0001f9d1\U0000200d\U0001f527", "\U0001f9d1\U0000200d\U0001f680", "\U0001f575\ufe0f",
+            "\U0001f482", "\U0001f477", "\U0001f9d9", "\U0001f9db", "\U0001f9df", "\U0001f3c3",
+            "\U0001f483", "\U0001f57a", "\U0001f46f", "\U0001f9d8", "\U0001f6cc",
+        ],
+    ),
+    (
+        "Objects & Symbols",
+        [
+            "\U0001f4a1", "\U0001f4a3", "\U0001f4af", "\U0001f4ac", "\U0001f4ad", "\U0001f4a4",
+            "\U0001f4e2", "\U0001f514", "\U0001f515", "\U0001f3b5", "\U0001f3b6", "\U0001f3a4",
+            "\U0001f3a7", "\U0001f3ae", "\U0001f3af", "\U0001f3b2", "\U0001f9e9", "\U0001f3c6",
+            "\U0001f947", "\U0001f948", "\U0001f949", "\U0001f3c5", "\U0001f396\ufe0f", "\U0001f3f5\ufe0f",
+            "\U0001f39f\ufe0f", "\U0001f4f1", "\U0001f4bb", "\U00002328\ufe0f", "\U0001f5a5\ufe0f",
+            "\U0001f4be", "\U0001f4bf", "\U0001f4c0", "\U0001f4f7", "\U0001f4f8", "\U0001f4f9",
+            "\U0001f50d", "\U0001f50e", "\U0001f56f\ufe0f", "\U0001f4d5", "\U0001f4d7", "\U0001f4d8",
+            "\U0001f4d9", "\U0001f4da", "\U0001f4dd", "\U0001f4cc", "\U0001f4cd", "\U00002702\ufe0f",
+            "\U0001f512", "\U0001f513", "\U0001f511", "\U0001f528", "\u2692\ufe0f", "\u2699\ufe0f",
+            "\U0001f9f0", "\U0001f9f2", "\U0001f52b", "\U0001f52a", "\U0001f6e1\ufe0f", "\U0001fa96",
+        ],
+    ),
+    (
+        "Nature & Weather",
+        [
+            "\U0001f31f", "\u2728", "\u26a1", "\U0001f525", "\U0001f4a7", "\U0001f30a",
+            "\U0001f32a\ufe0f", "\U0001f308", "\u2600\ufe0f", "\U0001f324\ufe0f", "\u2601\ufe0f",
+            "\U0001f327\ufe0f", "\u2744\ufe0f", "\u2603\ufe0f", "\U0001f4a8", "\U0001f331",
+            "\U0001f332", "\U0001f333", "\U0001f334", "\U0001f335", "\U0001f337", "\U0001f339",
+            "\U0001f33a", "\U0001f33b", "\U0001f33c", "\U0001f341", "\U0001f342", "\U0001f343",
+            "\U0001faa8", "\U0001f30d", "\U0001f30e", "\U0001f30f", "\U0001f315", "\U0001f319",
+        ],
+    ),
+    (
+        "Vehicles & Places",
+        [
+            "\U0001f697", "\U0001f699", "\U0001f695", "\U0001f68c", "\U0001f692", "\U0001f691",
+            "\U0001f693", "\U0001f69a", "\U0001f69b", "\U0001f69c", "\U0001f3ce\ufe0f", "\U0001f3cd\ufe0f",
+            "\U0001f6f5", "\U0001f6fa", "\U0001f682", "\U0001f686", "\U0001f687", "\U0001f681",
+            "\u2708\ufe0f", "\U0001f6e9\ufe0f", "\U0001f6eb", "\U0001f6ec", "\U0001f680",
+            "\U0001f6f8", "\U0001f6a2", "\u26f4\ufe0f", "\U0001f6a4", "\u2693", "\U0001f5fa\ufe0f",
+            "\U0001f3d4\ufe0f", "\U0001f3d5\ufe0f", "\U0001f3d6\ufe0f", "\U0001f3dc\ufe0f",
+            "\U0001f3dd\ufe0f", "\U0001f3df\ufe0f", "\U0001f3f0", "\U0001f3ef", "\U0001f3ed",
+        ],
+    ),
+    (
+        "Food & Fun",
+        [
+            "\U0001f354", "\U0001f355", "\U0001f32d", "\U0001f35f", "\U0001f37f", "\U0001f36a",
+            "\U0001f370", "\U0001f382", "\U0001f36d", "\U0001f36c", "\U0001f36b", "\u2615",
+            "\U0001f379", "\U0001f37a", "\U0001f37b", "\U0001f942", "\U0001f3c0", "\u26bd",
+            "\U0001f3c8", "\u26be", "\U0001f3be", "\U0001f3d0", "\U0001f3d3", "\U0001f3f8",
+        ],
+    ),
 ]
 
 
-def emoji_picker(target_id: str, *, replace: bool = False) -> str:
-    mode = "replace" if replace else "insert"
-    buttons = "".join(
-        f'<button class="emoji-choice" type="button" data-emoji-target="{esc(target_id)}" '
-        f'data-emoji-mode="{mode}" data-emoji-value="{esc(emoji)}">{esc(emoji)}</button>'
-        for emoji in EMOJI_PICKER_VALUES
+def emoji_choice_html(
+    target_id: str,
+    mode: str,
+    value: str,
+    *,
+    label: Optional[str] = None,
+    image_url: str = "",
+) -> str:
+    label_text = label or value
+    content = (
+        f'<img src="{esc(image_url)}" alt="{esc(label_text)}"><span>{esc(label_text)}</span>'
+        if image_url
+        else esc(value)
     )
+    classes = "emoji-choice custom-emoji" if image_url else "emoji-choice"
+    return (
+        f'<button class="{classes}" type="button" data-emoji-target="{esc(target_id)}" '
+        f'data-emoji-mode="{mode}" data-emoji-value="{esc(value)}" '
+        f'data-emoji-label="{esc(label_text)}" title="{esc(label_text)}">{content}</button>'
+    )
+
+
+def emoji_picker(target_id: str, *, replace: bool = False, guild: Any = None) -> str:
+    mode = "replace" if replace else "insert"
+    groups = []
+    custom_buttons = []
+    if guild is not None:
+        custom_emojis = sorted(getattr(guild, "emojis", []), key=lambda item: str(getattr(item, "name", "")).lower())
+        for emoji in custom_emojis[:250]:
+            emoji_name = str(getattr(emoji, "name", "emoji"))
+            emoji_id = str(getattr(emoji, "id", ""))
+            if not emoji_id:
+                continue
+            prefix = "a" if bool(getattr(emoji, "animated", False)) else ""
+            value = f"<{prefix}:{emoji_name}:{emoji_id}>"
+            image_url = str(getattr(emoji, "url", ""))
+            custom_buttons.append(
+                emoji_choice_html(target_id, mode, value, label=f":{emoji_name}:", image_url=image_url)
+            )
+    if custom_buttons:
+        groups.append(
+            '<section class="emoji-group"><h4>Server Emojis</h4>'
+            f'<div class="emoji-grid custom-grid">{"".join(custom_buttons)}</div></section>'
+        )
+    for group_name, emojis in EMOJI_PICKER_GROUPS:
+        buttons = "".join(emoji_choice_html(target_id, mode, emoji, label=emoji) for emoji in emojis)
+        groups.append(
+            f'<section class="emoji-group"><h4>{esc(group_name)}</h4>'
+            f'<div class="emoji-grid">{buttons}</div></section>'
+        )
     return (
         '<details class="emoji-picker">'
         '<summary>Add emoji</summary>'
-        f'<div class="emoji-grid">{buttons}</div>'
+        '<input class="emoji-search" type="search" data-emoji-search placeholder="Search emoji or server emoji...">'
+        f'<div class="emoji-picker-body">{"".join(groups)}</div>'
         '</details>'
     )
 
@@ -910,6 +1024,7 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       border-radius: 14px;
       background: rgba(255,255,255,.045);
       padding: 10px;
+      max-width: 560px;
     }}
     .emoji-picker summary {{
       cursor: pointer;
@@ -917,11 +1032,35 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       font-weight: 950;
       user-select: none;
     }}
+    .emoji-search {{
+      margin-top: 10px;
+      min-height: 38px;
+      border-radius: 12px;
+      font-size: 14px;
+    }}
+    .emoji-picker-body {{
+      margin-top: 10px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 4px;
+    }}
+    .emoji-group {{
+      margin: 0 0 12px;
+    }}
+    .emoji-group h4 {{
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }}
     .emoji-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
       gap: 7px;
-      margin-top: 10px;
+    }}
+    .custom-grid {{
+      grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
     }}
     .emoji-choice {{
       min-height: 38px;
@@ -937,6 +1076,63 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       border-color: var(--line-strong);
       background: rgba(41,245,210,.12);
     }}
+    .custom-emoji {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 7px;
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 850;
+      overflow: hidden;
+    }}
+    .custom-emoji img {{
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      flex: 0 0 auto;
+      object-fit: contain;
+    }}
+    .custom-emoji span {{
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .emoji-choice[hidden],
+    .emoji-group[hidden] {{
+      display: none !important;
+    }}
+    .submission-toolbar {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }}
+    .submission-table-scroll {{
+      max-height: 520px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(0,0,0,.14);
+    }}
+    .submission-table-scroll table {{
+      margin: 0;
+    }}
+    .status-badge {{
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--muted);
+      background: rgba(255,255,255,.055);
+    }}
+    .status-pending {{ color: #ffe58a; border-color: rgba(255,229,138,.35); background: rgba(255,229,138,.08); }}
+    .status-accepted {{ color: #7cffbb; border-color: rgba(124,255,187,.35); background: rgba(124,255,187,.08); }}
+    .status-denied {{ color: #ff8a9b; border-color: rgba(255,138,155,.35); background: rgba(255,138,155,.08); }}
+    .status-ticket {{ color: #84d6ff; border-color: rgba(132,214,255,.35); background: rgba(132,214,255,.08); }}
     .token-list {{
       display: flex;
       flex-wrap: wrap;
@@ -1065,6 +1261,21 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       target.value = target.value.slice(0, start) + emoji + target.value.slice(end);
       target.selectionStart = target.selectionEnd = start + emoji.length;
       target.dispatchEvent(new Event("input", {{ bubbles: true }}));
+    }});
+    document.addEventListener("input", (event) => {{
+      const search = event.target.closest("[data-emoji-search]");
+      if (!search) return;
+      const picker = search.closest(".emoji-picker");
+      if (!picker) return;
+      const needle = (search.value || "").trim().toLowerCase();
+      picker.querySelectorAll(".emoji-choice").forEach((button) => {{
+        const label = (button.dataset.emojiLabel || button.textContent || "").toLowerCase();
+        button.hidden = Boolean(needle && !label.includes(needle));
+      }});
+      picker.querySelectorAll(".emoji-group").forEach((group) => {{
+        const hasVisible = Array.from(group.querySelectorAll(".emoji-choice")).some((button) => !button.hidden);
+        group.hidden = Boolean(needle && !hasVisible);
+      }});
     }});
   </script>
 </body>
@@ -1292,28 +1503,37 @@ def render_submission_overview(
     submissions: dict[str, Any],
     selected_submission_id: str,
 ) -> str:
-    def submission_is_open(submission: dict[str, Any]) -> bool:
-        if submission.get("ticket_closed_at"):
-            return False
-        status = str(submission.get("status") or "pending").lower()
-        return status == "pending" or bool(submission.get("ticket_channel_id"))
-
-    open_submissions = {
+    all_submissions = {
         submission_id: submission
         for submission_id, submission in submissions.items()
-        if isinstance(submission, dict) and submission_is_open(submission)
+        if isinstance(submission, dict)
     }
     sorted_submissions = sorted(
-        open_submissions.items(),
+        all_submissions.items(),
         key=lambda item: int(item[1].get("created_at") or 0),
         reverse=True,
     )
-    selected_submission = open_submissions.get(selected_submission_id) if selected_submission_id else None
+    selected_submission = all_submissions.get(selected_submission_id) if selected_submission_id else None
     if not selected_submission and sorted_submissions:
         selected_submission_id, selected_submission = sorted_submissions[0]
 
+    def status_badge_class(submission: dict[str, Any]) -> str:
+        if submission.get("ticket_channel_id") and not submission.get("ticket_closed_at"):
+            return "status-ticket"
+        status = str(submission.get("status") or "pending").lower()
+        if status == "accepted":
+            return "status-accepted"
+        if status == "denied":
+            return "status-denied"
+        return "status-pending"
+
+    pending_count = sum(1 for submission in all_submissions.values() if str(submission.get("status") or "pending").lower() == "pending")
+    accepted_count = sum(1 for submission in all_submissions.values() if str(submission.get("status") or "").lower() == "accepted")
+    denied_count = sum(1 for submission in all_submissions.values() if str(submission.get("status") or "").lower() == "denied")
+    ticket_open_count = sum(1 for submission in all_submissions.values() if submission.get("ticket_channel_id") and not submission.get("ticket_closed_at"))
+
     table_rows = []
-    for submission_id, submission in sorted_submissions[:80]:
+    for submission_id, submission in sorted_submissions:
         panel_key = str(submission.get("panel_key") or "")
         panel = panels.get(panel_key, {})
         panel_name = panel.get("name") or panel_key or "Application"
@@ -1325,11 +1545,11 @@ def render_submission_overview(
               <td><a href="/applications?guild_id={guild_id}&tab=submissions&submission_id={esc(submission_id)}"><code>{esc(submission_id)}</code></a></td>
               <td>{esc(submission.get("username") or submission.get("user_id") or "Unknown")}</td>
               <td>{esc(panel_name)}</td>
-              <td>{esc(submission_status_label(submission))}</td>
+              <td><span class="status-badge {status_badge_class(submission)}">{esc(submission_status_label(submission))}</span></td>
               <td><span class="muted">{submitted_label}</span></td>
             </tr>"""
         )
-    rows_html = "".join(table_rows) or '<tr><td colspan="5" class="muted">No open applications right now.</td></tr>'
+    rows_html = "".join(table_rows) or '<tr><td colspan="5" class="muted">No saved applications yet.</td></tr>'
 
     if selected_submission:
         panel_key = str(selected_submission.get("panel_key") or "")
@@ -1375,12 +1595,20 @@ def render_submission_overview(
 
     return f"""
       <div class="card pad span-5">
-        <div class="section-title"><h2>Applications overview</h2><span class="pill">{fmt_count(len(open_submissions))} open</span></div>
-        <p class="module-note">Review open submissions from this server. Closed tickets and finished applications are hidden from this list.</p>
-        <table class="mini-table">
-          <thead><tr><th>ID</th><th>User</th><th>Panel</th><th>Status</th><th>Submitted</th></tr></thead>
-          <tbody>{rows_html}</tbody>
-        </table>
+        <div class="section-title"><h2>Applications overview</h2><span class="pill">{fmt_count(len(all_submissions))} saved</span></div>
+        <p class="module-note">Review every saved submission from this server. Scroll the table to reach older applications.</p>
+        <div class="submission-toolbar">
+          <span class="pill">Pending {fmt_count(pending_count)}</span>
+          <span class="pill">Accepted {fmt_count(accepted_count)}</span>
+          <span class="pill">Denied {fmt_count(denied_count)}</span>
+          <span class="pill">Ticket open {fmt_count(ticket_open_count)}</span>
+        </div>
+        <div class="submission-table-scroll">
+          <table class="mini-table">
+            <thead><tr><th>ID</th><th>User</th><th>Panel</th><th>Status</th><th>Submitted</th></tr></thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+        </div>
       </div>
       {detail}"""
 
@@ -1590,7 +1818,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <select name="rules_channel_id">{channel_options(guild, welcome_settings.get("rules_channel_id"))}</select>
           <label>Welcome text</label>
           <textarea id="welcome-message-template" name="message_template" maxlength="1800">{esc(welcome_settings.get("message_template") or default_welcome_message)}</textarea>
-          {emoji_picker("welcome-message-template")}
+          {emoji_picker("welcome-message-template", guild=guild)}
           <div class="token-list">
             <code>{'{user}'}</code><code>{'{username}'}</code><code>{'{server}'}</code><code>{'{member_count}'}</code><code>{'{rules_channel}'}</code>
           </div>
@@ -1614,7 +1842,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <select name="leave_channel_id">{channel_options(guild, welcome_settings.get("leave_channel_id"))}</select>
           <label>Leave text</label>
           <textarea id="leave-message-template" name="leave_message_template" maxlength="1800">{esc(welcome_settings.get("leave_message_template") or default_leave_message)}</textarea>
-          {emoji_picker("leave-message-template")}
+          {emoji_picker("leave-message-template", guild=guild)}
           <div class="token-list">
             <code>{'{user}'}</code><code>{'{username}'}</code><code>{'{server}'}</code><code>{'{member_count}'}</code>
           </div>
@@ -1861,7 +2089,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
             <div>
               <label>Emoji</label>
               <input id="reaction-role-emoji" name="emoji" maxlength="32" placeholder="\U0001f381">
-              {emoji_picker("reaction-role-emoji", replace=True)}
+              {emoji_picker("reaction-role-emoji", replace=True, guild=guild)}
             </div>
           </div>
           <label>Button text</label>

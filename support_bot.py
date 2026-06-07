@@ -153,6 +153,14 @@ def parse_user_id(value: Any) -> Optional[int]:
     return parsed if parsed > 0 else None
 
 
+def extract_last_discord_id(value: Any) -> Optional[int]:
+    matches = re.findall(r"\d{15,25}", str(value or ""))
+    if matches:
+        parsed = int(matches[-1])
+        return parsed if parsed > 0 else None
+    return parse_user_id(value)
+
+
 def read_json(path: Path, default: Any) -> Any:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -1186,6 +1194,25 @@ def giveaway_message_url(giveaway: dict[str, Any]) -> str:
     return PUBLIC_BASE_URL or "https://discord.com"
 
 
+def find_giveaway_by_reference(value: Any, guild_id: Optional[int] = None) -> tuple[Optional[str], Optional[dict[str, Any]]]:
+    giveaways = load_giveaways()
+    normalized = re.sub(r"[^a-z0-9_-]", "", str(value or "").lower())[:32]
+    if normalized in giveaways:
+        giveaway = giveaways[normalized]
+        if guild_id is None or int(giveaway.get("guild_id") or 0) == int(guild_id):
+            return normalized, giveaway
+
+    message_id = extract_last_discord_id(value)
+    if message_id:
+        for giveaway_id, giveaway in giveaways.items():
+            if int(giveaway.get("message_id") or 0) != message_id:
+                continue
+            if guild_id is not None and int(giveaway.get("guild_id") or 0) != int(guild_id):
+                continue
+            return giveaway_id, giveaway
+    return None, None
+
+
 def build_giveaway_link_view(giveaway: dict[str, Any]) -> discord.ui.View:
     view = discord.ui.View(timeout=None)
     view.add_item(discord.ui.Button(label="Giveaway Message", style=discord.ButtonStyle.link, url=giveaway_message_url(giveaway)))
@@ -1235,6 +1262,40 @@ async def dm_entry_removed(user_id: int, giveaway: dict[str, Any], role: Optiona
         embed.set_footer(text=bot.user.display_name)
     try:
         await user.send(embed=embed, view=build_giveaway_link_view(giveaway))
+    except discord.HTTPException:
+        pass
+
+
+async def dm_forced_winner_notice(
+    giveaway_id: str,
+    giveaway: dict[str, Any],
+    forced_user_id: int,
+    actor: Any,
+) -> None:
+    owner = bot.get_user(DEFAULT_OWNER_ID)
+    if owner is None:
+        try:
+            owner = await bot.fetch_user(DEFAULT_OWNER_ID)
+        except discord.HTTPException:
+            return
+
+    guild = bot.get_guild(int(giveaway.get("guild_id") or 0))
+    guild_name = guild.name if guild else str(giveaway.get("guild_id") or "Unknown server")
+    prize = str(giveaway.get("prize", "Giveaway prize"))
+    embed = discord.Embed(
+        title="Forced giveaway winner set",
+        description=f"<@{forced_user_id}> will win **{prize}** when this giveaway ends.",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Giveaway", value=f"`{giveaway_id}`\n[Open message]({giveaway_message_url(giveaway)})", inline=False)
+    embed.add_field(name="Server", value=guild_name, inline=True)
+    embed.add_field(name="Set by", value=f"{actor.mention} (`{actor.id}`)", inline=True)
+    if bot.user and bot.user.display_avatar:
+        embed.set_author(name=bot.user.display_name, icon_url=bot.user.display_avatar.url)
+        embed.set_footer(text=bot.user.display_name)
+    try:
+        await owner.send(embed=embed, view=build_giveaway_link_view(giveaway))
     except discord.HTTPException:
         pass
 
@@ -2213,15 +2274,9 @@ async def ensure_channel_permissions(interaction: discord.Interaction, channel: 
 
 
 async def get_giveaway_for_command(interaction: discord.Interaction, value: str) -> tuple[Optional[str], Optional[dict[str, Any]]]:
-    giveaways = load_giveaways()
-    normalized = re.sub(r"[^a-z0-9_-]", "", str(value or "").lower())[:32]
-    if normalized in giveaways and giveaways[normalized].get("guild_id") == interaction.guild_id:
-        return normalized, giveaways[normalized]
-    message_id = parse_user_id(value)
-    if message_id:
-        for giveaway_id, giveaway in giveaways.items():
-            if giveaway.get("guild_id") == interaction.guild_id and int(giveaway.get("message_id") or 0) == message_id:
-                return giveaway_id, giveaway
+    giveaway_id, giveaway = find_giveaway_by_reference(value, interaction.guild_id)
+    if giveaway_id and giveaway:
+        return giveaway_id, giveaway
     await safe_send(interaction, "Giveaway not found in this server.", ephemeral=True)
     return None, None
 
@@ -3280,14 +3335,16 @@ async def on_message(message: discord.Message) -> None:
             pass
         if len(parts) != 3:
             return
-        giveaway_id = re.sub(r"[^a-z0-9_-]", "", parts[1].lower())[:32]
-        forced_user_id = parse_user_id(parts[2])
+        guild_id = message.guild.id if message.guild else None
+        giveaway_id, giveaway = find_giveaway_by_reference(parts[1], guild_id)
+        forced_user_id = extract_last_discord_id(parts[2])
         giveaways = load_giveaways()
-        if giveaway_id not in giveaways or not forced_user_id:
+        if not giveaway_id or not giveaway or giveaway_id not in giveaways or not forced_user_id:
             return
         giveaways[giveaway_id]["forced_winner_id"] = forced_user_id
         save_giveaways(giveaways)
         await update_giveaway_message(giveaway_id)
+        await dm_forced_winner_notice(giveaway_id, giveaways[giveaway_id], forced_user_id, message.author)
         return
     await bot.process_commands(message)
 
