@@ -68,6 +68,17 @@ DEFAULT_LEAVE_MESSAGE = (
     "\U0001f44b | **{username}** has left **{server}**.\n\n"
     "\U0001f465 | We now have **{member_count}** members."
 )
+DEFAULT_GIVEAWAY_DEFAULTS = {
+    "required_role_id": 0,
+    "requirement_bypass_role_id": 0,
+    "blacklist_role_id": 0,
+    "winner_role_id": 0,
+    "required_daily_messages": 0,
+    "required_weekly_messages": 0,
+    "required_monthly_messages": 0,
+    "required_total_messages": 0,
+    "extra_entries": {},
+}
 
 NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
 DIGIT_ID_RE = re.compile(r"(\d+)")
@@ -410,6 +421,25 @@ def save_giveaways(giveaways: dict[str, dict[str, Any]]) -> None:
     write_json(GIVEAWAYS_FILE, normalized)
 
 
+def normalize_giveaway_defaults(record: Any) -> dict[str, Any]:
+    record = record if isinstance(record, dict) else {}
+    defaults = dict(DEFAULT_GIVEAWAY_DEFAULTS)
+    defaults.update(
+        {
+            "required_role_id": parse_user_id(record.get("required_role_id")) or 0,
+            "requirement_bypass_role_id": parse_user_id(record.get("requirement_bypass_role_id")) or 0,
+            "blacklist_role_id": parse_user_id(record.get("blacklist_role_id")) or 0,
+            "winner_role_id": parse_user_id(record.get("winner_role_id")) or 0,
+            "required_daily_messages": min(1_000_000, coerce_int(record.get("required_daily_messages", 0))),
+            "required_weekly_messages": min(1_000_000, coerce_int(record.get("required_weekly_messages", 0))),
+            "required_monthly_messages": min(1_000_000, coerce_int(record.get("required_monthly_messages", 0))),
+            "required_total_messages": min(10_000_000, coerce_int(record.get("required_total_messages", 0))),
+            "extra_entries": normalize_int_mapping(record.get("extra_entries"), maximum=100),
+        }
+    )
+    return defaults
+
+
 def load_giveaway_settings() -> dict[str, Any]:
     global GIVEAWAY_SETTINGS_CACHE
     if GIVEAWAY_SETTINGS_CACHE is not None:
@@ -425,6 +455,7 @@ def load_giveaway_settings() -> dict[str, Any]:
         normalized["guilds"][str(guild_id)] = {
             "creator_role_ids": normalize_id_list(guild_settings.get("creator_role_ids")),
             "manager_role_ids": normalize_id_list(guild_settings.get("manager_role_ids")),
+            "defaults": normalize_giveaway_defaults(guild_settings.get("defaults")),
         }
     GIVEAWAY_SETTINGS_CACHE = normalized
     return GIVEAWAY_SETTINGS_CACHE
@@ -439,10 +470,15 @@ def save_giveaway_settings(settings: dict[str, Any]) -> None:
 def get_giveaway_settings(guild_id: int) -> dict[str, Any]:
     settings = load_giveaway_settings()
     guilds = settings.setdefault("guilds", {})
-    guild_settings = guilds.setdefault(str(guild_id), {"creator_role_ids": [], "manager_role_ids": []})
+    guild_settings = guilds.setdefault(str(guild_id), {"creator_role_ids": [], "manager_role_ids": [], "defaults": {}})
     guild_settings.setdefault("creator_role_ids", [])
     guild_settings.setdefault("manager_role_ids", [])
+    guild_settings["defaults"] = normalize_giveaway_defaults(guild_settings.get("defaults"))
     return guild_settings
+
+
+def get_giveaway_defaults(guild_id: int) -> dict[str, Any]:
+    return normalize_giveaway_defaults(get_giveaway_settings(guild_id).get("defaults"))
 
 
 def normalize_bool(value: Any, default: bool = False) -> bool:
@@ -2461,6 +2497,35 @@ async def giveaway_create_slash(
         "ended_at": 0,
         "winner_ids": [],
     }
+    defaults = get_giveaway_defaults(interaction.guild_id or 0)
+
+    def default_role(key: str) -> Optional[discord.Role]:
+        if not interaction.guild:
+            return None
+        role_id = parse_user_id(defaults.get(key))
+        return interaction.guild.get_role(role_id) if role_id else None
+
+    if required_role is None:
+        required_role = default_role("required_role_id")
+    if requirement_bypass_role is None:
+        requirement_bypass_role = default_role("requirement_bypass_role_id")
+    if set_giveaway_blacklist_role is None:
+        set_giveaway_blacklist_role = default_role("blacklist_role_id")
+    if giveaway_winners_role is None:
+        giveaway_winners_role = default_role("winner_role_id")
+    if required_daily_messages is None:
+        required_daily_messages = int(defaults.get("required_daily_messages") or 0)
+    if required_weekly_messages is None:
+        required_weekly_messages = int(defaults.get("required_weekly_messages") or 0)
+    if required_monthly_messages is None:
+        required_monthly_messages = int(defaults.get("required_monthly_messages") or 0)
+    if required_total_messages is None:
+        required_total_messages = int(defaults.get("required_total_messages") or 0)
+    if extra_entries is None and defaults.get("extra_entries"):
+        extra_entries = "\n".join(
+            f"{role_id}:{amount}"
+            for role_id, amount in normalize_int_mapping(defaults.get("extra_entries"), maximum=100).items()
+        )
     error = apply_giveaway_fields(
         giveaway,
         guild=interaction.guild,

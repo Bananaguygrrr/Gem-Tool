@@ -313,6 +313,17 @@ def form_int(form: dict[str, list[str]], key: str) -> Optional[int]:
     return parsed if parsed > 0 else None
 
 
+def form_count(form: dict[str, list[str]], key: str, *, maximum: int = 1_000_000) -> int:
+    value = form_one(form, key)
+    if not value:
+        return 0
+    try:
+        parsed = int(value)
+    except ValueError:
+        return 0
+    return max(0, min(maximum, parsed))
+
+
 def selected(value: Any, expected: Any) -> str:
     return " selected" if str(value or "") == str(expected or "") else ""
 
@@ -344,14 +355,18 @@ def channel_options(guild: Any, selected_id: Any = "") -> str:
 
 
 def role_options(guild: Any, selected_id: Any = "", *, include_blank: bool = True) -> str:
-    options = ['<option value="">None</option>'] if include_blank else []
+    options = ['<option value="" data-search="none">None</option>'] if include_blank else []
     roles = [
         role
         for role in sorted(getattr(guild, "roles", []), key=lambda item: item.position, reverse=True)
         if not role.is_default() and not role.managed
     ]
     for role in roles:
-        options.append(f'<option value="{role.id}"{selected(role.id, selected_id)}>{esc(role.name)}</option>')
+        search_text = f"{role.name} {role.id}".lower()
+        options.append(
+            f'<option value="{role.id}" data-search="{esc(search_text)}"{selected(role.id, selected_id)}>'
+            f'{esc(role.name)}</option>'
+        )
     return "\n".join(options)
 
 
@@ -516,7 +531,8 @@ def multi_role_options(guild: Any, selected_ids: list[int]) -> str:
         if not role.is_default() and not role.managed
     ]
     return "\n".join(
-        f'<option value="{role.id}"{" selected" if str(role.id) in selected_set else ""}>{esc(role.name)}</option>'
+        f'<option value="{role.id}" data-search="{esc((role.name + " " + str(role.id)).lower())}"'
+        f'{" selected" if str(role.id) in selected_set else ""}>{esc(role.name)}</option>'
         for role in roles
     )
 
@@ -539,7 +555,7 @@ def searchable_role_select(
     return (
         f'<input class="select-search" type="search" data-select-filter="#{esc(select_id)}" '
         f'placeholder="{esc(placeholder)}">'
-        f'<select id="{esc(select_id)}" name="{esc(name)}">'
+        f'<select class="role-select" id="{esc(select_id)}" name="{esc(name)}" data-role-select>'
         f'{role_options(guild, selected_id, include_blank=include_blank)}</select>'
     )
 
@@ -556,7 +572,7 @@ def searchable_multi_role_select(
     return (
         f'<input class="select-search" type="search" data-select-filter="#{esc(select_id)}" '
         f'placeholder="{esc(placeholder)}">'
-        f'<select id="{esc(select_id)}" name="{esc(name)}" multiple>'
+        f'<select class="role-select" id="{esc(select_id)}" name="{esc(name)}" multiple data-role-select>'
         f'{multi_role_options(guild, selected_ids)}</select>'
     )
 
@@ -866,6 +882,14 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     }}
     textarea {{ min-height: 92px; resize: vertical; }}
     select[multiple] {{ min-height: 132px; }}
+    select.role-select.is-filtering {{
+      min-height: 132px;
+      overflow-y: auto;
+      background: rgba(3, 6, 12, .92);
+    }}
+    select.role-select option[hidden] {{
+      display: none;
+    }}
     input:focus, textarea:focus, select:focus {{ border-color: var(--aqua); box-shadow: 0 0 0 3px rgba(41,245,210,.12); }}
     .button-row {{
       display: flex;
@@ -966,6 +990,9 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       margin: 0 0 8px;
       border-radius: 11px;
       font-size: 14px;
+    }}
+    .select-search:focus + select.role-select {{
+      border-color: var(--aqua);
     }}
     .two {{
       display: grid;
@@ -1339,6 +1366,32 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     <span><a href="/terms">Terms</a><a href="/privacy">Privacy Policy</a></span>
   </footer>
   <script>
+    function filterRoleSelect(input) {{
+      const select = document.querySelector(input.dataset.selectFilter || "");
+      if (!select) return;
+      const needle = (input.value || "").trim().toLowerCase();
+      let visible = 0;
+      Array.from(select.options).forEach((option) => {{
+        const hay = (option.dataset.search || `${{option.textContent || ""}} ${{option.value || ""}}`).toLowerCase();
+        const hidden = Boolean(needle && option.value && !hay.includes(needle));
+        option.hidden = hidden;
+        if (!hidden) visible += 1;
+      }});
+      if (needle) {{
+        select.classList.add("is-filtering");
+        select.size = Math.min(Math.max(visible, select.multiple ? 4 : 2), 9);
+      }} else {{
+        select.classList.remove("is-filtering");
+        select.removeAttribute("size");
+      }}
+    }}
+
+    function collapseRoleSelect(select) {{
+      if (!select || select.multiple) return;
+      select.classList.remove("is-filtering");
+      select.removeAttribute("size");
+    }}
+
     document.addEventListener("click", (event) => {{
       const button = event.target.closest("[data-emoji-value]");
       if (!button) return;
@@ -1361,13 +1414,7 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
     document.addEventListener("input", (event) => {{
       const roleSearch = event.target.closest("[data-select-filter]");
       if (roleSearch) {{
-        const select = document.querySelector(roleSearch.dataset.selectFilter || "");
-        if (!select) return;
-        const needle = (roleSearch.value || "").trim().toLowerCase();
-        Array.from(select.options).forEach((option) => {{
-          const hay = `${{option.textContent || ""}} ${{option.value || ""}}`.toLowerCase();
-          option.hidden = Boolean(needle && option.value && !hay.includes(needle));
-        }});
+        filterRoleSelect(roleSearch);
         return;
       }}
       const search = event.target.closest("[data-emoji-search]");
@@ -1383,6 +1430,18 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
         const hasVisible = Array.from(group.querySelectorAll(".emoji-choice")).some((button) => !button.hidden);
         group.hidden = Boolean(needle && !hasVisible);
       }});
+    }});
+    document.addEventListener("change", (event) => {{
+      const select = event.target.closest("select[data-role-select]");
+      if (select) collapseRoleSelect(select);
+    }});
+    document.addEventListener("focusout", (event) => {{
+      const input = event.target.closest("[data-select-filter]");
+      if (!input) return;
+      window.setTimeout(() => {{
+        const select = document.querySelector(input.dataset.selectFilter || "");
+        if (document.activeElement !== select) collapseRoleSelect(select);
+      }}, 100);
     }});
   </script>
 </body>
@@ -1835,6 +1894,25 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
 
     support_bot = load_support_bot()
     giveaway_settings = support_bot.get_giveaway_settings(guild_id) if support_bot else {"creator_role_ids": [], "manager_role_ids": []}
+    giveaway_defaults = giveaway_settings.get("defaults", {}) if isinstance(giveaway_settings, dict) else {}
+    if support_bot:
+        giveaway_defaults = support_bot.normalize_giveaway_defaults(giveaway_defaults)
+    def giveaway_default(key: str, fallback: int = 0) -> int:
+        try:
+            return int(giveaway_defaults.get(key) or fallback)
+        except (TypeError, ValueError):
+            return fallback
+
+    default_extra_entries = ""
+    if isinstance(giveaway_defaults.get("extra_entries"), dict):
+        default_extra_rows = []
+        for raw_role_id, amount in giveaway_defaults.get("extra_entries", {}).items():
+            try:
+                role_id = int(raw_role_id)
+            except (TypeError, ValueError):
+                continue
+            default_extra_rows.append(f"{role_name(guild, role_id)}:{int(amount)}")
+        default_extra_entries = "\n".join(default_extra_rows)
     giveaways = []
     if support_bot:
         giveaways = [
@@ -2055,30 +2133,58 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
     giveaway_required_role = searchable_role_select(
         guild,
         "required_role_id",
-        "",
+        giveaway_default("required_role_id"),
         select_id="giveaway-required-role",
         placeholder="Search required role...",
     )
     giveaway_bypass_role = searchable_role_select(
         guild,
         "requirement_bypass_role_id",
-        "",
+        giveaway_default("requirement_bypass_role_id"),
         select_id="giveaway-bypass-role",
         placeholder="Search bypass role...",
     )
     giveaway_blacklist_role = searchable_role_select(
         guild,
         "blacklist_role_id",
-        "",
+        giveaway_default("blacklist_role_id"),
         select_id="giveaway-blacklist-role",
         placeholder="Search blacklisted role...",
     )
     giveaway_winner_role = searchable_role_select(
         guild,
         "winner_role_id",
-        "",
+        giveaway_default("winner_role_id"),
         select_id="giveaway-winner-role",
         placeholder="Search winner role...",
+    )
+    default_required_role = searchable_role_select(
+        guild,
+        "required_role_id",
+        giveaway_default("required_role_id"),
+        select_id="giveaway-default-required-role",
+        placeholder="Search default required role...",
+    )
+    default_bypass_role = searchable_role_select(
+        guild,
+        "requirement_bypass_role_id",
+        giveaway_default("requirement_bypass_role_id"),
+        select_id="giveaway-default-bypass-role",
+        placeholder="Search default bypass role...",
+    )
+    default_blacklist_role = searchable_role_select(
+        guild,
+        "blacklist_role_id",
+        giveaway_default("blacklist_role_id"),
+        select_id="giveaway-default-blacklist-role",
+        placeholder="Search default blacklisted role...",
+    )
+    default_winner_role = searchable_role_select(
+        guild,
+        "winner_role_id",
+        giveaway_default("winner_role_id"),
+        select_id="giveaway-default-winner-role",
+        placeholder="Search default winner role...",
     )
 
     giveaway_section = f"""
@@ -2105,6 +2211,59 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <thead><tr><th>ID</th><th>Prize</th><th>Status</th></tr></thead>
           <tbody>{giveaway_rows}</tbody>
         </table>
+      </div>
+
+      <div class="card pad span-12">
+        <div class="section-title"><h2>Default giveaway settings</h2><span class="pill">Saved per server</span></div>
+        <p class="module-note">These values pre-fill new website giveaways and slash-command giveaways when the same option is left empty.</p>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="giveaways">
+          <input type="hidden" name="action" value="save_giveaway_defaults">
+          <div class="two">
+            <div>
+              <label>Default required role</label>
+              {default_required_role}
+            </div>
+            <div>
+              <label>Default requirements bypass role</label>
+              {default_bypass_role}
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Default blacklisted role</label>
+              {default_blacklist_role}
+            </div>
+            <div>
+              <label>Default winner role</label>
+              {default_winner_role}
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Default messages today</label>
+              <input name="required_daily_messages" type="number" min="0" value="{giveaway_default("required_daily_messages")}">
+            </div>
+            <div>
+              <label>Default messages this week</label>
+              <input name="required_weekly_messages" type="number" min="0" value="{giveaway_default("required_weekly_messages")}">
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Default messages this month</label>
+              <input name="required_monthly_messages" type="number" min="0" value="{giveaway_default("required_monthly_messages")}">
+            </div>
+            <div>
+              <label>Default total messages</label>
+              <input name="required_total_messages" type="number" min="0" value="{giveaway_default("required_total_messages")}">
+            </div>
+          </div>
+          <label>Default extra entries</label>
+          <textarea name="extra_entries" maxlength="1000" placeholder="@Booster:2&#10;Donator:4&#10;Role ID:5">{esc(default_extra_entries)}</textarea>
+          <p class="muted">Example: <code>@Booster:2</code> gives boosters 2 entries instead of 1.</p>
+          <div class="button-row"><button class="primary" type="submit">Save default settings</button></div>
+        </form>
       </div>
 
       <div class="card pad span-12">
@@ -2158,25 +2317,25 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <div class="two">
             <div>
               <label>Messages today</label>
-              <input name="required_daily_messages" type="number" min="0" value="0">
+              <input name="required_daily_messages" type="number" min="0" value="{giveaway_default("required_daily_messages")}">
             </div>
             <div>
               <label>Messages this week</label>
-              <input name="required_weekly_messages" type="number" min="0" value="0">
+              <input name="required_weekly_messages" type="number" min="0" value="{giveaway_default("required_weekly_messages")}">
             </div>
           </div>
           <div class="two">
             <div>
               <label>Messages this month</label>
-              <input name="required_monthly_messages" type="number" min="0" value="0">
+              <input name="required_monthly_messages" type="number" min="0" value="{giveaway_default("required_monthly_messages")}">
             </div>
             <div>
               <label>Total messages</label>
-              <input name="required_total_messages" type="number" min="0" value="0">
+              <input name="required_total_messages" type="number" min="0" value="{giveaway_default("required_total_messages")}">
             </div>
           </div>
           <label>Extra entries, optional</label>
-          <textarea name="extra_entries" maxlength="1000" placeholder="@Booster:2&#10;Donator:4&#10;Role ID:5"></textarea>
+          <textarea name="extra_entries" maxlength="1000" placeholder="@Booster:2&#10;Donator:4&#10;Role ID:5">{esc(default_extra_entries)}</textarea>
           <div class="button-row"><button class="primary" type="submit">Create giveaway</button></div>
         </form>
       </div>"""
@@ -2698,6 +2857,32 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             support_bot.save_giveaway_settings(settings)
             return "Giveaway role settings saved."
 
+        if action == "save_giveaway_defaults":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Giveaway bot is not loaded.")
+            parsed_extra = support_bot.parse_role_entry_mapping(form_one(form, "extra_entries"), guild)
+            if form_one(form, "extra_entries") and not parsed_extra:
+                raise ValueError("Extra entries must use @Role:2, Role Name:2, or role_id:2.")
+            settings = support_bot.load_giveaway_settings()
+            guild_settings = support_bot.get_giveaway_settings(guild_id)
+            guild_settings["defaults"] = support_bot.normalize_giveaway_defaults(
+                {
+                    "required_role_id": form_int(form, "required_role_id") or 0,
+                    "requirement_bypass_role_id": form_int(form, "requirement_bypass_role_id") or 0,
+                    "blacklist_role_id": form_int(form, "blacklist_role_id") or 0,
+                    "winner_role_id": form_int(form, "winner_role_id") or 0,
+                    "required_daily_messages": form_count(form, "required_daily_messages"),
+                    "required_weekly_messages": form_count(form, "required_weekly_messages"),
+                    "required_monthly_messages": form_count(form, "required_monthly_messages"),
+                    "required_total_messages": form_count(form, "required_total_messages", maximum=10_000_000),
+                    "extra_entries": parsed_extra,
+                }
+            )
+            settings.setdefault("guilds", {})[str(guild_id)] = guild_settings
+            support_bot.save_giveaway_settings(settings)
+            return "Default giveaway settings saved."
+
         if action == "create_giveaway":
             support_bot = load_support_bot()
             if not support_bot:
@@ -2714,10 +2899,10 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
                     required_role_id=form_int(form, "required_role_id") or 0,
                     requirement_bypass_role_id=form_int(form, "requirement_bypass_role_id") or 0,
                     blacklist_role_id=form_int(form, "blacklist_role_id") or 0,
-                    required_daily_messages=form_int(form, "required_daily_messages") or 0,
-                    required_weekly_messages=form_int(form, "required_weekly_messages") or 0,
-                    required_monthly_messages=form_int(form, "required_monthly_messages") or 0,
-                    required_total_messages=form_int(form, "required_total_messages") or 0,
+                    required_daily_messages=form_count(form, "required_daily_messages"),
+                    required_weekly_messages=form_count(form, "required_weekly_messages"),
+                    required_monthly_messages=form_count(form, "required_monthly_messages"),
+                    required_total_messages=form_count(form, "required_total_messages", maximum=10_000_000),
                     winner_role_id=form_int(form, "winner_role_id") or 0,
                     extra_entries=form_one(form, "extra_entries"),
                 )
