@@ -595,6 +595,8 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{esc(title)} - {esc(APP_NAME)}</title>
+  <link rel="icon" href="/assets/gem-tool-logo.svg" type="image/svg+xml">
+  <link rel="shortcut icon" href="/assets/gem-tool-logo.svg" type="image/svg+xml">
   <style>
     :root {{
       color-scheme: dark;
