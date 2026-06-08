@@ -7,6 +7,7 @@ import hmac
 import html
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -520,6 +521,46 @@ def multi_role_options(guild: Any, selected_ids: list[int]) -> str:
     )
 
 
+def safe_dom_id(prefix: str, value: Any) -> str:
+    raw = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(value or "field")).strip("-")
+    return f"{prefix}-{raw or 'field'}"
+
+
+def searchable_role_select(
+    guild: Any,
+    name: str,
+    selected_id: Any = "",
+    *,
+    include_blank: bool = True,
+    select_id: str = "",
+    placeholder: str = "Search roles...",
+) -> str:
+    select_id = select_id or safe_dom_id(name, selected_id or "role")
+    return (
+        f'<input class="select-search" type="search" data-select-filter="#{esc(select_id)}" '
+        f'placeholder="{esc(placeholder)}">'
+        f'<select id="{esc(select_id)}" name="{esc(name)}">'
+        f'{role_options(guild, selected_id, include_blank=include_blank)}</select>'
+    )
+
+
+def searchable_multi_role_select(
+    guild: Any,
+    name: str,
+    selected_ids: list[int],
+    *,
+    select_id: str = "",
+    placeholder: str = "Search roles...",
+) -> str:
+    select_id = select_id or safe_dom_id(name, "roles")
+    return (
+        f'<input class="select-search" type="search" data-select-filter="#{esc(select_id)}" '
+        f'placeholder="{esc(placeholder)}">'
+        f'<select id="{esc(select_id)}" name="{esc(name)}" multiple>'
+        f'{multi_role_options(guild, selected_ids)}</select>'
+    )
+
+
 def discord_logo_svg() -> str:
     return (
         '<svg class="discord-icon" viewBox="0 0 127.14 96.36" aria-hidden="true" focusable="false">'
@@ -864,12 +905,65 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       border-radius: 15px;
       background: rgba(255,255,255,.045);
     }}
+    details.panel-item {{
+      padding: 0;
+      overflow: hidden;
+    }}
+    details.panel-item[open] {{
+      border-color: rgba(41,245,210,.28);
+      background: rgba(41,245,210,.045);
+    }}
+    .panel-summary {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }}
+    .panel-summary::-webkit-details-marker {{ display: none; }}
+    .panel-summary-main {{
+      min-width: 0;
+    }}
+    .panel-summary-main b {{
+      display: block;
+      font-size: 18px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .panel-summary-main span {{
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }}
+    .panel-summary-meta {{
+      display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      flex: 0 0 auto;
+    }}
+    .panel-body {{
+      padding: 0 16px 16px;
+      border-top: 1px solid rgba(255,255,255,.08);
+    }}
     .question {{
       margin-top: 12px;
       padding: 12px;
       border: 1px solid rgba(255,255,255,.1);
       border-radius: 13px;
       background: rgba(0,0,0,.16);
+    }}
+    .select-search {{
+      min-height: 38px;
+      margin: 0 0 8px;
+      border-radius: 11px;
+      font-size: 14px;
     }}
     .two {{
       display: grid;
@@ -1263,6 +1357,17 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
       target.dispatchEvent(new Event("input", {{ bubbles: true }}));
     }});
     document.addEventListener("input", (event) => {{
+      const roleSearch = event.target.closest("[data-select-filter]");
+      if (roleSearch) {{
+        const select = document.querySelector(roleSearch.dataset.selectFilter || "");
+        if (!select) return;
+        const needle = (roleSearch.value || "").trim().toLowerCase();
+        Array.from(select.options).forEach((option) => {{
+          const hay = `${{option.textContent || ""}} ${{option.value || ""}}`.toLowerCase();
+          option.hidden = Boolean(needle && option.value && !hay.includes(needle));
+        }});
+        return;
+      }}
       const search = event.target.closest("[data-emoji-search]");
       if (!search) return;
       const picker = search.closest(".emoji-picker");
@@ -1653,52 +1758,74 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
     for panel_key, panel in sorted(panels.items()):
         questions_html = render_panel_questions(panel_key, panel, guild_id)
         accepted_role_id = panel.get("accepted_role_id") or ""
+        panel_name = panel.get("name", panel_key)
+        panel_description = panel.get("description", "")
+        question_count = len(application_system.panel_questions(panel))
+        enabled = panel.get("enabled", True) is not False
+        accepted_role_select = searchable_role_select(
+            guild,
+            "accepted_role_id",
+            accepted_role_id,
+            select_id=safe_dom_id("accepted-role", panel_key),
+        )
         panel_cards.append(
             f"""
-            <article class="panel-item">
-              <form method="post" action="/applications?guild_id={guild_id}">
-                <input type="hidden" name="tab" value="applications">
-                <input type="hidden" name="action" value="update_panel">
-                <input type="hidden" name="panel_key" value="{esc(panel_key)}">
-                <div class="two">
-                  <div>
-                    <label>Panel name</label>
-                    <input name="name" maxlength="80" value="{esc(panel.get('name', panel_key))}">
+            <details class="panel-item">
+              <summary class="panel-summary">
+                <span class="panel-summary-main">
+                  <b>{esc(panel_name)}</b>
+                  <span>{esc(panel_description or "No description")}</span>
+                </span>
+                <span class="panel-summary-meta">
+                  <span class="pill">{question_count} question{'s' if question_count != 1 else ''}</span>
+                  <span class="status-badge {'status-accepted' if enabled else 'status-denied'}">{'Open' if enabled else 'Hidden'}</span>
+                </span>
+              </summary>
+              <div class="panel-body">
+                <form method="post" action="/applications?guild_id={guild_id}">
+                  <input type="hidden" name="tab" value="applications">
+                  <input type="hidden" name="action" value="update_panel">
+                  <input type="hidden" name="panel_key" value="{esc(panel_key)}">
+                  <div class="two">
+                    <div>
+                      <label>Panel name</label>
+                      <input name="name" maxlength="80" value="{esc(panel_name)}">
+                    </div>
+                    <div>
+                      <label>Accepted role</label>
+                      {accepted_role_select}
+                    </div>
                   </div>
-                  <div>
-                    <label>Accepted role</label>
-                    <select name="accepted_role_id">{role_options(guild, accepted_role_id)}</select>
+                  <label>Description</label>
+                  <input name="description" maxlength="100" value="{esc(panel_description)}">
+                  <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="enabled"{checked(enabled)}> Show in dropdown</label>
+                  <div class="button-row">
+                    <button class="primary" type="submit">Save panel</button>
+                    <button class="danger" type="submit" name="action" value="delete_panel">Delete panel</button>
                   </div>
-                </div>
-                <label>Description</label>
-                <input name="description" maxlength="100" value="{esc(panel.get('description', ''))}">
-                <label><input style="width:auto; margin-right: 8px;" type="checkbox" name="enabled"{checked(panel.get('enabled', True) is not False)}> Show in dropdown</label>
-                <div class="button-row">
-                  <button class="primary" type="submit">Save panel</button>
-                  <button class="danger" type="submit" name="action" value="delete_panel">Delete panel</button>
-                </div>
-              </form>
-              <h4>Questions</h4>
-              {questions_html}
-              <form method="post" action="/applications?guild_id={guild_id}">
-                <input type="hidden" name="tab" value="applications">
-                <input type="hidden" name="action" value="add_question">
-                <input type="hidden" name="panel_key" value="{esc(panel_key)}">
-                <div class="two">
-                  <div>
-                    <label>Insert position</label>
-                    <input name="question_number" type="number" min="1" value="{len(application_system.panel_questions(panel)) + 1}">
+                </form>
+                <h4>Questions</h4>
+                {questions_html}
+                <form method="post" action="/applications?guild_id={guild_id}">
+                  <input type="hidden" name="tab" value="applications">
+                  <input type="hidden" name="action" value="add_question">
+                  <input type="hidden" name="panel_key" value="{esc(panel_key)}">
+                  <div class="two">
+                    <div>
+                      <label>Insert position</label>
+                      <input name="question_number" type="number" min="1" value="{question_count + 1}">
+                    </div>
+                    <div>
+                      <label>Dropdown choices, optional</label>
+                      <input name="choices" placeholder="yes|no or leave empty">
+                    </div>
                   </div>
-                  <div>
-                    <label>Dropdown choices, optional</label>
-                    <input name="choices" placeholder="yes|no or leave empty">
-                  </div>
-                </div>
-                <label>New question</label>
-                <textarea name="text" maxlength="300" placeholder="What should the applicant answer?"></textarea>
-                <div class="button-row"><button class="primary" type="submit">Add question</button></div>
-              </form>
-            </article>"""
+                  <label>New question</label>
+                  <textarea name="text" maxlength="300" placeholder="What should the applicant answer?"></textarea>
+                  <div class="button-row"><button class="primary" type="submit">Add question</button></div>
+                </form>
+              </div>
+            </details>"""
         )
 
     if not panel_cards:
@@ -1907,6 +2034,51 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
         </form>
       </div>"""
 
+    session_user = session.get("user", {}) if isinstance(session.get("user"), dict) else {}
+    dashboard_user_id = str(session_user.get("id") or "")
+    giveaway_creator_roles = searchable_multi_role_select(
+        guild,
+        "creator_role_ids",
+        giveaway_settings.get("creator_role_ids", []),
+        select_id="giveaway-creator-roles",
+        placeholder="Search creator roles...",
+    )
+    giveaway_manager_roles = searchable_multi_role_select(
+        guild,
+        "manager_role_ids",
+        giveaway_settings.get("manager_role_ids", []),
+        select_id="giveaway-manager-roles",
+        placeholder="Search manager roles...",
+    )
+    giveaway_required_role = searchable_role_select(
+        guild,
+        "required_role_id",
+        "",
+        select_id="giveaway-required-role",
+        placeholder="Search required role...",
+    )
+    giveaway_bypass_role = searchable_role_select(
+        guild,
+        "requirement_bypass_role_id",
+        "",
+        select_id="giveaway-bypass-role",
+        placeholder="Search bypass role...",
+    )
+    giveaway_blacklist_role = searchable_role_select(
+        guild,
+        "blacklist_role_id",
+        "",
+        select_id="giveaway-blacklist-role",
+        placeholder="Search blacklisted role...",
+    )
+    giveaway_winner_role = searchable_role_select(
+        guild,
+        "winner_role_id",
+        "",
+        select_id="giveaway-winner-role",
+        placeholder="Search winner role...",
+    )
+
     giveaway_section = f"""
       <div class="card pad span-6">
         <div class="section-title"><h2>Giveaway access</h2><span class="pill">{active_count} active / {ended_count} ended</span></div>
@@ -1914,23 +2086,97 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <input type="hidden" name="tab" value="giveaways">
           <input type="hidden" name="action" value="save_giveaway_roles">
           <label>Creator roles</label>
-          <select name="creator_role_ids" multiple>{multi_role_options(guild, giveaway_settings.get("creator_role_ids", []))}</select>
+          {giveaway_creator_roles}
           <label>Manager roles</label>
-          <select name="manager_role_ids" multiple>{multi_role_options(guild, giveaway_settings.get("manager_role_ids", []))}</select>
+          {giveaway_manager_roles}
           <p class="muted">Users with Manage Server always have giveaway access. Hold Ctrl while clicking to select multiple roles.</p>
           <div class="button-row"><button class="primary" type="submit">Save giveaway roles</button></div>
         </form>
       </div>
 
       <div class="card pad span-6">
-        <h2>Giveaway commands</h2>
-        <p class="muted">Giveaway creation stays in Discord so uploaded images, roles, and channels work naturally.</p>
+        <h2>Recent giveaways</h2>
+        <p class="muted">The auto-end worker checks active giveaways regularly. You can still use Discord commands for edits and rerolls.</p>
         <p><code>/giveaway create</code> <code>/giveaway edit</code> <code>/giveaway participants</code></p>
         <p><code>/giveaway remove-participant</code> <code>/giveaway end</code> <code>/giveaway reroll</code></p>
         <table class="mini-table">
           <thead><tr><th>ID</th><th>Prize</th><th>Status</th></tr></thead>
           <tbody>{giveaway_rows}</tbody>
         </table>
+      </div>
+
+      <div class="card pad span-12">
+        <div class="section-title"><h2>Create giveaway</h2><span class="pill">Website host</span></div>
+        <form method="post" action="/applications?guild_id={guild_id}">
+          <input type="hidden" name="tab" value="giveaways">
+          <input type="hidden" name="action" value="create_giveaway">
+          <input type="hidden" name="dashboard_user_id" value="{esc(dashboard_user_id)}">
+          <div class="two">
+            <div>
+              <label>Channel</label>
+              <select name="channel_id">{channel_options(guild)}</select>
+            </div>
+            <div>
+              <label>Prize</label>
+              <input name="prize" maxlength="180" placeholder="Discord Nitro, gems, custom prize..." required>
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Duration</label>
+              <input name="duration" maxlength="24" placeholder="10m, 2h, 3d, 1w" required>
+            </div>
+            <div>
+              <label>Winners</label>
+              <input name="winners" type="number" min="1" max="20" value="1">
+            </div>
+          </div>
+          <label>Image URL, optional</label>
+          <input name="image_url" maxlength="500" placeholder="https://...png / jpg / gif / webp">
+          <div class="two">
+            <div>
+              <label>Required role</label>
+              {giveaway_required_role}
+            </div>
+            <div>
+              <label>Requirements bypass role</label>
+              {giveaway_bypass_role}
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Blacklisted role</label>
+              {giveaway_blacklist_role}
+            </div>
+            <div>
+              <label>Winner role</label>
+              {giveaway_winner_role}
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Messages today</label>
+              <input name="required_daily_messages" type="number" min="0" value="0">
+            </div>
+            <div>
+              <label>Messages this week</label>
+              <input name="required_weekly_messages" type="number" min="0" value="0">
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label>Messages this month</label>
+              <input name="required_monthly_messages" type="number" min="0" value="0">
+            </div>
+            <div>
+              <label>Total messages</label>
+              <input name="required_total_messages" type="number" min="0" value="0">
+            </div>
+          </div>
+          <label>Extra entries, optional</label>
+          <textarea name="extra_entries" maxlength="1000" placeholder="@Booster:2&#10;Donator:4&#10;Role ID:5"></textarea>
+          <div class="button-row"><button class="primary" type="submit">Create giveaway</button></div>
+        </form>
       </div>"""
 
     suggestion_settings = support_bot.get_suggestion_settings(guild_id) if support_bot else {
@@ -2084,7 +2330,7 @@ def render_guild_dashboard(session: dict[str, Any], guild_id: int, query: dict[s
           <div class="two">
             <div>
               <label>Role</label>
-              <select name="role_id">{role_options(guild, include_blank=True)}</select>
+              {searchable_role_select(guild, "role_id", "", select_id="reaction-role-button-role", placeholder="Search button role...")}
             </div>
             <div>
               <label>Emoji</label>
@@ -2449,6 +2695,37 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             settings.setdefault("guilds", {})[str(guild_id)] = guild_settings
             support_bot.save_giveaway_settings(settings)
             return "Giveaway role settings saved."
+
+        if action == "create_giveaway":
+            support_bot = load_support_bot()
+            if not support_bot:
+                raise ValueError("Giveaway bot is not loaded.")
+            ok, result = run_bot_coro(
+                support_bot.create_giveaway_from_dashboard(
+                    guild_id=guild_id,
+                    channel_id=form_int(form, "channel_id") or 0,
+                    host_id=form_int(form, "dashboard_user_id") or 0,
+                    duration=form_one(form, "duration"),
+                    winners=form_int(form, "winners") or 1,
+                    prize=form_one(form, "prize"),
+                    image_url=form_one(form, "image_url"),
+                    required_role_id=form_int(form, "required_role_id") or 0,
+                    requirement_bypass_role_id=form_int(form, "requirement_bypass_role_id") or 0,
+                    blacklist_role_id=form_int(form, "blacklist_role_id") or 0,
+                    required_daily_messages=form_int(form, "required_daily_messages") or 0,
+                    required_weekly_messages=form_int(form, "required_weekly_messages") or 0,
+                    required_monthly_messages=form_int(form, "required_monthly_messages") or 0,
+                    required_total_messages=form_int(form, "required_total_messages") or 0,
+                    winner_role_id=form_int(form, "winner_role_id") or 0,
+                    extra_entries=form_one(form, "extra_entries"),
+                )
+            )
+            if not ok:
+                raise ValueError(str(result))
+            created, message = result
+            if not created:
+                raise ValueError(message)
+            return message
 
         if action == "save_welcome_settings":
             support_bot = load_support_bot()

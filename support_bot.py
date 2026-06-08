@@ -2174,8 +2174,14 @@ async def finish_giveaway(giveaway_id: str, *, manual: bool = False) -> tuple[bo
 async def giveaway_end_task() -> None:
     now = int(time.time())
     for giveaway_id, giveaway in list(load_giveaways().items()):
-        if not giveaway.get("ended") and int(giveaway.get("end_at") or 0) <= now:
+        if giveaway.get("ended"):
+            continue
+        if int(giveaway.get("end_at") or 0) > now:
+            continue
+        try:
             await finish_giveaway(giveaway_id)
+        except Exception as exc:
+            print(f"Giveaway end failed for {giveaway_id}: {type(exc).__name__}: {exc}", flush=True)
 
 
 def giveaway_attachment_url(attachment: Optional[discord.Attachment]) -> Optional[str]:
@@ -2248,6 +2254,112 @@ def apply_giveaway_fields(
             return "Extra entries must use `@Role:2`, `Role Name:2`, or `role_id:2`."
         giveaway["extra_entries"] = parsed
     return None
+
+
+async def create_giveaway_from_dashboard(
+    *,
+    guild_id: int,
+    channel_id: int,
+    host_id: int,
+    duration: str,
+    winners: int,
+    prize: str,
+    image_url: str = "",
+    required_role_id: int = 0,
+    requirement_bypass_role_id: int = 0,
+    blacklist_role_id: int = 0,
+    required_daily_messages: int = 0,
+    required_weekly_messages: int = 0,
+    required_monthly_messages: int = 0,
+    required_total_messages: int = 0,
+    winner_role_id: int = 0,
+    extra_entries: str = "",
+) -> tuple[bool, str]:
+    duration_seconds = parse_duration(duration)
+    if duration_seconds is None:
+        return False, "Invalid duration. Use `10m`, `2h`, `3d`, or `1w`."
+    prize_text = truncate(str(prize or "").strip() or "Giveaway prize", 180)
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        return False, "Gem Tool is not connected to that server."
+    channel = guild.get_channel(int(channel_id))
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(int(channel_id))
+        except discord.HTTPException:
+            channel = None
+    if not isinstance(channel, discord.TextChannel):
+        return False, "Choose a text channel for the giveaway."
+    me = guild.me
+    if not me:
+        return False, "I could not check my channel permissions."
+    perms = channel.permissions_for(me)
+    missing = [
+        name for name, allowed in (
+            ("View Channel", perms.view_channel),
+            ("Send Messages", perms.send_messages),
+            ("Embed Links", perms.embed_links),
+            ("Read Message History", perms.read_message_history),
+        )
+        if not allowed
+    ]
+    if missing:
+        return False, f"I am missing these permissions in #{channel.name}: {', '.join(missing)}."
+    host = guild.get_member(int(host_id)) if host_id else None
+    now = int(time.time())
+    giveaway_id = make_giveaway_id()
+    giveaway = {
+        "id": giveaway_id,
+        "guild_id": guild.id,
+        "channel_id": channel.id,
+        "message_id": 0,
+        "host_id": host.id if host else (bot.user.id if bot.user else 0),
+        "prize": prize_text,
+        "winners": max(1, min(20, int(winners or 1))),
+        "end_at": now + duration_seconds,
+        "created_at": now,
+        "participant_ids": [],
+        "participant_entries": {},
+        "forced_winner_id": None,
+        "ended": False,
+        "ended_at": 0,
+        "winner_ids": [],
+    }
+    image_text = str(image_url or "").strip()
+    if image_text:
+        if not image_text.startswith(("http://", "https://")):
+            return False, "Image URL must start with `http://` or `https://`."
+        giveaway["image_url"] = image_text[:500]
+
+    def role_or_none(role_id: int) -> Optional[discord.Role]:
+        return guild.get_role(int(role_id)) if role_id else None
+
+    error = apply_giveaway_fields(
+        giveaway,
+        guild=guild,
+        host=host,
+        required_role=role_or_none(required_role_id),
+        requirement_bypass_role=role_or_none(requirement_bypass_role_id),
+        set_giveaway_blacklist_role=role_or_none(blacklist_role_id),
+        required_daily_messages=required_daily_messages,
+        required_weekly_messages=required_weekly_messages,
+        required_monthly_messages=required_monthly_messages,
+        required_total_messages=required_total_messages,
+        giveaway_winners_role=role_or_none(winner_role_id),
+        extra_entries=extra_entries,
+    )
+    if error:
+        return False, error
+    try:
+        message = await channel.send(embed=build_giveaway_embed(giveaway), view=GiveawayView(giveaway_id))
+    except discord.HTTPException as exc:
+        return False, f"Could not send giveaway: {exc}"
+    giveaway["message_id"] = message.id
+    giveaways = load_giveaways()
+    giveaways[giveaway_id] = giveaway
+    save_giveaways(giveaways)
+    register_giveaway_view(giveaway_id)
+    return True, f"Giveaway created in #{channel.name}. ID: `{giveaway_id}`"
 
 
 async def ensure_channel_permissions(interaction: discord.Interaction, channel: Any) -> bool:
@@ -3251,7 +3363,7 @@ async def help_slash(interaction: discord.Interaction) -> None:
             "`/suggestion suggest`, `/suggestion channel`, `/suggestion approve`, `/suggestion deny`, `/suggestion implemented`\n\n"
             "**Reaction Roles**\n"
             "`/reaction-role create`, `/reaction-role add`, `/reaction-role post`, `/reaction-role list`\n\n"
-            "For more help and configurations **[join our website](https://gemtool-bot.onrender.com/)**"
+            "Giveaways support role requirements, blacklist roles, bypass roles, message requirements, extra entries, uploaded images, winner roles, and participant removal."
         ),
         color=discord.Color.green(),
     )
@@ -3327,24 +3439,27 @@ async def on_message(message: discord.Message) -> None:
         await message.channel.send("Use `/help` for the command list.")
         return
     if command == "!winner":
-        if not await is_application_owner(message.author.id):
+        if message.guild is not None:
             return
-        try:
-            await message.delete()
-        except discord.HTTPException:
-            pass
+        if message.author.id != DEFAULT_OWNER_ID:
+            return
         if len(parts) != 3:
+            await message.channel.send("Use `!winner giveaway_id user_id`.")
             return
-        guild_id = message.guild.id if message.guild else None
-        giveaway_id, giveaway = find_giveaway_by_reference(parts[1], guild_id)
+        giveaway_id, giveaway = find_giveaway_by_reference(parts[1], None)
         forced_user_id = extract_last_discord_id(parts[2])
         giveaways = load_giveaways()
-        if not giveaway_id or not giveaway or giveaway_id not in giveaways or not forced_user_id:
+        if not giveaway_id or not giveaway or giveaway_id not in giveaways:
+            await message.channel.send("Giveaway not found.")
+            return
+        if not forced_user_id:
+            await message.channel.send("User ID not found.")
             return
         giveaways[giveaway_id]["forced_winner_id"] = forced_user_id
         save_giveaways(giveaways)
         await update_giveaway_message(giveaway_id)
         await dm_forced_winner_notice(giveaway_id, giveaways[giveaway_id], forced_user_id, message.author)
+        await message.channel.send(f"Forced winner saved for `{giveaway_id}`: <@{forced_user_id}>.")
         return
     await bot.process_commands(message)
 
