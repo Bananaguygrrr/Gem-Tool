@@ -11,6 +11,7 @@ It includes:
 - application logs, accepted roles, and ticket buttons
 - giveaway creation, editing, ending, rerolling, and participant management
 - giveaway requirements, blacklist roles, bypass roles, message requirements, extra entries, and winner DMs
+- owner-only slash commands for private bot control
 - a public status and invite website
 - built-in Terms of Service and Privacy Policy pages
 
@@ -20,7 +21,7 @@ Recommended Render service:
 
 - Name: `Gemtool.bot`
 - Runtime: Python
-- Build command: `pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py`
+- Build command: `pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py owner_addon.py sitecustomize.py`
 - Start command: `python3 server.py`
 
 ## Required Environment Variables
@@ -39,6 +40,7 @@ Recommended:
 - `SUPPORT_SERVER_URL`: Your Discord support server invite.
 - `LAST_UPDATE`: Text shown on the website, for example `June 5, 2026`.
 - `DASHBOARD_SESSION_SECRET`: Long random text used to sign dashboard sessions.
+- `OWNER_ID`: Discord user ID that can run `/owner` commands. The Discord application owner is also allowed automatically.
 - `COMMAND_SYNC_MODE`: `global` for production, or `guild` for quick testing.
 - `COMMAND_SYNC_GUILD_ID`: Only needed when `COMMAND_SYNC_MODE=guild`.
 
@@ -118,6 +120,14 @@ Giveaway commands:
 - `/giveaway manager-roles`
 - `/giveaway fix`
 
+Owner commands:
+
+- `/owner status`
+- `/owner sync`
+- `/owner server-list`
+- `/owner leave-server`
+- `/owner dm`
+
 General:
 
 - `/help`
@@ -126,7 +136,7 @@ General:
 
 ```bash
 pip install -r requirements.txt
-python -m py_compile server.py support_bot.py application_system.py
+python -m py_compile server.py support_bot.py application_system.py owner_addon.py sitecustomize.py
 python server.py
 ```
 

@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     region: frankfurt
-    buildCommand: pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py
+    buildCommand: pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py owner_addon.py sitecustomize.py
     startCommand: python3 server.py
     autoDeploy: true
     envVars:
@@ -24,5 +24,7 @@ services:
         sync: false
       - key: DASHBOARD_SESSION_SECRET
         generateValue: true
+      - key: OWNER_ID
+        sync: false
       - key: DATA_DIR
         value: /var/data
