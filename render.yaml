@@ -4,14 +4,14 @@ services:
     runtime: python
     plan: free
     region: frankfurt
-    buildCommand: pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py owner_addon.py sitecustomize.py
+    buildCommand: pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py
     startCommand: python3 server.py
     autoDeploy: true
     envVars:
       - key: APP_NAME
         value: Gem Tool
       - key: PUBLIC_BASE_URL
-        value: https://gemtool.bot
+        value: https://gem-tool.onrender.com
       - key: SUPPORT_SERVER_URL
         value: https://discord.gg/sUxqbyV87F
       - key: LAST_UPDATE
@@ -24,7 +24,5 @@ services:
         sync: false
       - key: DASHBOARD_SESSION_SECRET
         generateValue: true
-      - key: OWNER_ID
-        sync: false
       - key: DATA_DIR
         value: /var/data

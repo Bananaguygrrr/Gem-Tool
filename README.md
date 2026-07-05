@@ -11,7 +11,6 @@ It includes:
 - application logs, accepted roles, and ticket buttons
 - giveaway creation, editing, ending, rerolling, and participant management
 - giveaway requirements, blacklist roles, bypass roles, message requirements, extra entries, and winner DMs
-- owner-only slash commands for private bot control
 - a public status and invite website
 - built-in Terms of Service and Privacy Policy pages
 
@@ -21,7 +20,7 @@ Recommended Render service:
 
 - Name: `Gemtool.bot`
 - Runtime: Python
-- Build command: `pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py owner_addon.py sitecustomize.py`
+- Build command: `pip install -r requirements.txt && python3 -m py_compile server.py support_bot.py application_system.py`
 - Start command: `python3 server.py`
 
 ## Required Environment Variables
@@ -36,11 +35,10 @@ Set these in Render:
 Recommended:
 
 - `APP_NAME`: `Gem Tool`
-- `PUBLIC_BASE_URL`: Your public website URL, for example `https://gemtool.bot` or your Render URL.
+- `PUBLIC_BASE_URL`: Your public website URL, for example `https://gem-tool.onrender.com` or your custom domain.
 - `SUPPORT_SERVER_URL`: Your Discord support server invite.
 - `LAST_UPDATE`: Text shown on the website, for example `June 5, 2026`.
 - `DASHBOARD_SESSION_SECRET`: Long random text used to sign dashboard sessions.
-- `OWNER_ID`: Discord user ID that can run `/owner` commands. The Discord application owner is also allowed automatically.
 - `COMMAND_SYNC_MODE`: `global` for production, or `guild` for quick testing.
 - `COMMAND_SYNC_GUILD_ID`: Only needed when `COMMAND_SYNC_MODE=guild`.
 
@@ -76,20 +74,20 @@ The website creates the invite automatically from `DISCORD_CLIENT_ID`.
 For Discord dashboard login, add this exact redirect URL in the Discord Developer Portal:
 
 ```text
-https://gemtool.bot/applications/callback
+https://gem-tool.onrender.com/applications/callback
 ```
 
-If you use the Render URL instead of a custom domain, use:
+If you use a custom domain instead of the Render URL, use:
 
 ```text
-https://your-render-service.onrender.com/applications/callback
+https://your-domain/applications/callback
 ```
 
 Use these policy links in the Discord Developer Portal:
 
 ```text
-https://your-domain-or-render-url/terms
-https://your-domain-or-render-url/privacy
+https://gem-tool.onrender.com/terms
+https://gem-tool.onrender.com/privacy
 ```
 
 ## Main Commands
@@ -120,14 +118,6 @@ Giveaway commands:
 - `/giveaway manager-roles`
 - `/giveaway fix`
 
-Owner commands:
-
-- `/owner status`
-- `/owner sync`
-- `/owner server-list`
-- `/owner leave-server`
-- `/owner dm`
-
 General:
 
 - `/help`
@@ -136,7 +126,7 @@ General:
 
 ```bash
 pip install -r requirements.txt
-python -m py_compile server.py support_bot.py application_system.py owner_addon.py sitecustomize.py
+python -m py_compile server.py support_bot.py application_system.py
 python server.py
 ```
 
