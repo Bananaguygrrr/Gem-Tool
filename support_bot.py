@@ -96,6 +96,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 BOT_STARTED_AT = int(time.time())
 BOT_ONLINE = False
+BOT_STARTUP_STATE = "starting"
+BOT_STARTUP_MESSAGE = "Bot is starting."
+BOT_RETRY_AT = 0
 GIVEAWAYS_CACHE: Optional[dict[str, dict[str, Any]]] = None
 GIVEAWAY_SETTINGS_CACHE: Optional[dict[str, Any]] = None
 MESSAGE_STATS_CACHE: Optional[dict[str, Any]] = None
@@ -115,6 +118,19 @@ def truncate(value: Any, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 3)] + "..."
+
+
+def set_bot_state(state: str, message: str = "", retry_after: int = 0) -> None:
+    global BOT_STARTUP_STATE, BOT_STARTUP_MESSAGE, BOT_RETRY_AT
+    BOT_STARTUP_STATE = state
+    BOT_STARTUP_MESSAGE = truncate(message or "", 500)
+    BOT_RETRY_AT = int(time.time()) + int(retry_after) if retry_after else 0
+
+
+def is_discord_rate_limit_error(error: Any) -> bool:
+    error_text = str(error)
+    error_lower = error_text.lower()
+    return "1015" in error_text or "429" in error_text or "rate limited" in error_lower
 
 
 def format_count(value: Any) -> str:
@@ -3450,6 +3466,7 @@ async def sync_commands() -> None:
 async def on_ready() -> None:
     global BOT_ONLINE
     BOT_ONLINE = True
+    set_bot_state("online", "Bot online.")
     restore_giveaway_views()
     restore_suggestion_views()
     restore_reaction_role_views()
@@ -3470,6 +3487,7 @@ async def on_ready() -> None:
 async def on_disconnect() -> None:
     global BOT_ONLINE
     BOT_ONLINE = False
+    set_bot_state("disconnected", "Disconnected from Discord; reconnecting.")
     save_message_stats(force=True)
 
 
@@ -3541,10 +3559,14 @@ bot.setup_hook = setup_hook
 
 
 def status_payload() -> dict[str, Any]:
+    online = bool(BOT_ONLINE and not bot.is_closed())
     return {
         "running": True,
-        "online": bool(BOT_ONLINE and not bot.is_closed()),
-        "status": "Bot online" if BOT_ONLINE and not bot.is_closed() else "Bot starting or offline",
+        "online": online,
+        "status": "Bot online" if online else (BOT_STARTUP_MESSAGE or "Bot starting or offline"),
+        "bot_state": "online" if online else BOT_STARTUP_STATE,
+        "startup_message": BOT_STARTUP_MESSAGE,
+        "retry_at": BOT_RETRY_AT,
         "guild_count": len(bot.guilds),
         "bot_user": str(bot.user) if bot.user else "",
         "bot_user_id": str(bot.user.id) if bot.user else "",
@@ -3555,29 +3577,47 @@ def status_payload() -> dict[str, Any]:
 
 
 def run() -> None:
+    global BOT_ONLINE
     if not TOKEN:
+        set_bot_state("disabled", "No DISCORD_TOKEN is set; Gem Tool bot is disabled.")
         print("No DISCORD_TOKEN set; Gem Tool bot is disabled.", flush=True)
         return
-    try:
-        bot.run(TOKEN)
-    except discord.LoginFailure as error:
-        print(f"Discord login failed. Reset DISCORD_TOKEN if this continues: {error}", flush=True)
-    except discord.HTTPException as error:
-        error_text = str(error)
-        error_lower = error_text.lower()
-        if "1015" in error_text or "429" in error_text or "rate limited" in error_lower:
-            print(
-                "Discord is temporarily rate limiting this Render server (Cloudflare 1015). "
-                "The website will stay online, but the Discord bot is offline until the cooldown clears. "
-                "Wait 15-60 minutes and avoid repeated redeploys/login attempts.",
-                flush=True,
-            )
-        else:
-            print(f"Discord startup HTTP error: {error}", flush=True)
-    except Exception as error:
-        print(f"Gem Tool bot failed to start: {type(error).__name__}: {error}", flush=True)
-    finally:
-        save_message_stats(force=True)
+    retry_delay = 60
+    while True:
+        BOT_ONLINE = False
+        if bot.is_closed():
+            bot.clear()
+        set_bot_state("starting", "Connecting to Discord.")
+        try:
+            bot.run(TOKEN)
+            set_bot_state("stopped", "Bot stopped.")
+            return
+        except discord.LoginFailure as error:
+            set_bot_state("login_failed", "Discord login failed. Reset DISCORD_TOKEN in Render.")
+            print(f"Discord login failed. Reset DISCORD_TOKEN if this continues: {error}", flush=True)
+            return
+        except discord.HTTPException as error:
+            if is_discord_rate_limit_error(error):
+                retry_delay = max(retry_delay, 15 * 60)
+                message = (
+                    "Discord is temporarily rate limiting this Render server (Cloudflare 1015). "
+                    "The bot will retry automatically; avoid repeated redeploys/login attempts."
+                )
+                set_bot_state("rate_limited", message, retry_delay)
+                print(f"{message} Next retry in {retry_delay} seconds.", flush=True)
+            else:
+                message = f"Discord startup HTTP error: {error}"
+                set_bot_state("http_error", message, retry_delay)
+                print(message, flush=True)
+        except Exception as error:
+            message = f"Gem Tool bot failed to start: {type(error).__name__}: {error}"
+            set_bot_state("error", message, retry_delay)
+            print(message, flush=True)
+        finally:
+            BOT_ONLINE = False
+            save_message_stats(force=True)
+        time.sleep(retry_delay)
+        retry_delay = min(max(retry_delay * 2, 60), 60 * 60)
 
 
 if __name__ == "__main__":

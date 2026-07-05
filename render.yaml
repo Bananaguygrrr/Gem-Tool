@@ -24,5 +24,7 @@ services:
         sync: false
       - key: DASHBOARD_SESSION_SECRET
         generateValue: true
+      - key: DASHBOARD_OWNER_TOKEN
+        sync: false
       - key: DATA_DIR
         value: /var/data

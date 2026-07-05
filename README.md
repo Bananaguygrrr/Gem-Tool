@@ -39,6 +39,7 @@ Recommended:
 - `SUPPORT_SERVER_URL`: Your Discord support server invite.
 - `LAST_UPDATE`: Text shown on the website, for example `June 5, 2026`.
 - `DASHBOARD_SESSION_SECRET`: Long random text used to sign dashboard sessions.
+- `DASHBOARD_OWNER_TOKEN`: Optional recovery password for the dashboard when Discord OAuth is temporarily rate limited.
 - `COMMAND_SYNC_MODE`: `global` for production, or `guild` for quick testing.
 - `COMMAND_SYNC_GUILD_ID`: Only needed when `COMMAND_SYNC_MODE=guild`.
 

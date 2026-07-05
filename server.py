@@ -47,6 +47,11 @@ DISCORD_CLIENT_ID = (
     or ""
 ).strip()
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
+DASHBOARD_OWNER_TOKEN = (
+    os.getenv("DASHBOARD_OWNER_TOKEN")
+    or os.getenv("DASHBOARD_TOKEN")
+    or ""
+).strip()
 SESSION_SECRET = (
     os.getenv("DASHBOARD_SESSION_SECRET")
     or DISCORD_CLIENT_SECRET
@@ -110,6 +115,10 @@ def status_payload() -> dict[str, object]:
     support_health = support_bot.status_payload() if support_bot else {}
     online = bool(support_health.get("online"))
     client_id = effective_client_id(support_health)
+    status_text = str(
+        support_health.get("status")
+        or (f"{APP_NAME} online" if online else f"{APP_NAME} offline")
+    )
     invite_url = ""
     if client_id:
         invite_url = (
@@ -118,7 +127,7 @@ def status_payload() -> dict[str, object]:
         )
     payload = {
         "app_name": APP_NAME,
-        "status": f"{APP_NAME} online" if online else f"{APP_NAME} offline",
+        "status": status_text,
         "online": online,
         "guild_count": str(support_health.get("guild_count") or 0),
         "last_update": current_last_update(),
@@ -128,6 +137,9 @@ def status_payload() -> dict[str, object]:
         "support_bot_online": online,
         "support_bot_user": str(support_health.get("bot_user") or ""),
         "support_bot_guild_count": str(support_health.get("guild_count") or 0),
+        "support_bot_state": str(support_health.get("bot_state") or ("online" if online else "offline")),
+        "support_bot_message": status_text,
+        "support_bot_retry_at": support_health.get("retry_at") or 0,
         "time": datetime.now(timezone.utc).isoformat(),
     }
     if SUPPORT_BOT_IMPORT_ERROR:
@@ -220,6 +232,39 @@ def bot_guilds() -> dict[str, Any]:
     if not support_bot or not support_bot.bot:
         return {}
     return {str(guild.id): guild for guild in support_bot.bot.guilds}
+
+
+def owner_token_matches(token: str) -> bool:
+    return bool(
+        DASHBOARD_OWNER_TOKEN
+        and token
+        and hmac.compare_digest(token, DASHBOARD_OWNER_TOKEN)
+    )
+
+
+def create_owner_session_from_bot() -> tuple[bool, str, str]:
+    support_bot = load_support_bot()
+    health = support_bot.status_payload() if support_bot else {}
+    guild_lookup = bot_guilds()
+    if not support_bot or not support_bot.bot or not support_bot.bot.is_ready() or not guild_lookup:
+        detail = str(health.get("status") or "The bot is not connected to Discord yet.")
+        return False, "", f"Owner login is ready, but Gem Tool is not connected to Discord yet. {detail}"
+
+    guilds = []
+    for guild in sorted(guild_lookup.values(), key=lambda item: item.name.lower()):
+        icon_key = getattr(getattr(guild, "icon", None), "key", "") or ""
+        guilds.append(
+            {
+                "id": str(guild.id),
+                "name": guild.name,
+                "icon": str(icon_key),
+                "owner": True,
+                "permissions": ADMINISTRATOR_PERMISSION,
+            }
+        )
+
+    user = {"id": "owner", "username": "Owner access", "global_name": "Owner access", "avatar": ""}
+    return True, create_session(user, guilds), ""
 
 
 def run_bot_coro(coro, timeout: float = 12.0):
@@ -1471,6 +1516,20 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
           <br><br><code>{esc(oauth_redirect_uri())}</code>
         </div>"""
     error_html = f'<div class="notice error">{esc(error)}</div>' if error else ""
+    owner_login = ""
+    if DASHBOARD_OWNER_TOKEN:
+        owner_login = """
+        <div class="notice">
+          <strong>Owner recovery login</strong>
+          <p class="muted">Use this only when Discord OAuth is temporarily rate limited.</p>
+          <form method="post" action="/applications/owner-login">
+            <label>Owner token</label>
+            <input type="password" name="token" autocomplete="current-password" required>
+            <div class="button-row">
+              <button type="submit">Open dashboard</button>
+            </div>
+          </form>
+        </div>"""
     body = f"""
     <section class="hero">
       <div>
@@ -1496,6 +1555,7 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
         <div class="button-row">
           <a class="button primary" href="/applications/login">{discord_logo_svg()}<strong>Login</strong></a>
         </div>
+        {owner_login}
       </aside>
     </section>"""
     return base_layout("Dashboard", body, session=session, active="dashboard")
@@ -2604,6 +2664,9 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         clean_path, _query = self._path_and_query()
+        if clean_path == "/applications/owner-login":
+            self._handle_owner_login()
+            return
         if clean_path == "/applications":
             self._handle_applications_post()
             return
@@ -2702,6 +2765,18 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
             "/applications",
             cookies=[make_cookie(SESSION_COOKIE, sign_value(session_id)), expire_cookie(STATE_COOKIE)],
         )
+
+    def _handle_owner_login(self) -> None:
+        form = self._read_form()
+        token = form_one(form, "token")
+        if not owner_token_matches(token):
+            self._send_redirect("/applications?error=" + quote("Owner login failed. Check DASHBOARD_OWNER_TOKEN."))
+            return
+        ok, session_id, error = create_owner_session_from_bot()
+        if not ok:
+            self._send_redirect("/applications?error=" + quote(error))
+            return
+        self._send_redirect("/applications", cookies=[make_cookie(SESSION_COOKIE, sign_value(session_id))])
 
     def _handle_logout(self) -> None:
         cookie = self._cookies().get(SESSION_COOKIE)

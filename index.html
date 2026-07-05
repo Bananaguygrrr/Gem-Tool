@@ -269,12 +269,20 @@
     }
 
     .status-pill.online { color: var(--green); }
+    .status-pill.waiting { color: var(--gold); }
     .dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
       background: currentColor;
       box-shadow: 0 0 18px currentColor;
+    }
+
+    .status-message {
+      margin: -10px 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
     }
 
     .crystal {
@@ -408,6 +416,7 @@
             <strong>Gem Tool status</strong>
             <span class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">Offline</span></span>
           </div>
+          <p class="status-message" id="status-detail">Checking Discord connection.</p>
           <div class="crystal" aria-hidden="true">
             <img class="status-logo" src="/assets/gem-tool-logo.svg" alt="">
           </div>
@@ -461,13 +470,21 @@
         const res = await fetch('/status', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
-        const online =
-          data.online === true ||
-          data.support_bot_online === true ||
-          String(data.status || '').toLowerCase().includes('online');
+        const online = data.online === true || data.support_bot_online === true;
+        const state = String(data.support_bot_state || '').toLowerCase();
+        const waiting = !online && ['starting', 'rate_limited', 'disconnected', 'http_error', 'error'].includes(state);
         const pill = document.getElementById('status-pill');
         pill.classList.toggle('online', online);
-        document.getElementById('status-text').textContent = online ? 'Online' : 'Offline';
+        pill.classList.toggle('waiting', waiting);
+        let label = 'Offline';
+        if (online) label = 'Online';
+        else if (state === 'rate_limited') label = 'Retrying';
+        else if (state === 'starting') label = 'Starting';
+        else if (state === 'disconnected') label = 'Reconnecting';
+        else if (state === 'login_failed') label = 'Login failed';
+        else if (state === 'disabled') label = 'Disabled';
+        document.getElementById('status-text').textContent = label;
+        document.getElementById('status-detail').textContent = data.support_bot_message || data.status || 'Discord connection unavailable.';
         document.getElementById('guild-count').textContent = data.guild_count || '0';
         document.getElementById('last-update').textContent = data.last_update || 'Unknown';
 
