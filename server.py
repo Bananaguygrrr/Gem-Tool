@@ -245,26 +245,12 @@ def owner_token_matches(token: str) -> bool:
 def create_owner_session_from_bot() -> tuple[bool, str, str]:
     support_bot = load_support_bot()
     health = support_bot.status_payload() if support_bot else {}
-    guild_lookup = bot_guilds()
-    if not support_bot or not support_bot.bot or not support_bot.bot.is_ready() or not guild_lookup:
-        detail = str(health.get("status") or "The bot is not connected to Discord yet.")
-        return False, "", f"Owner login is ready, but Gem Tool is not connected to Discord yet. {detail}"
-
-    guilds = []
-    for guild in sorted(guild_lookup.values(), key=lambda item: item.name.lower()):
-        icon_key = getattr(getattr(guild, "icon", None), "key", "") or ""
-        guilds.append(
-            {
-                "id": str(guild.id),
-                "name": guild.name,
-                "icon": str(icon_key),
-                "owner": True,
-                "permissions": ADMINISTRATOR_PERMISSION,
-            }
-        )
-
     user = {"id": "owner", "username": "Owner access", "global_name": "Owner access", "avatar": ""}
-    return True, create_session(user, guilds), ""
+    session_id = create_session(user, [], owner_access=True)
+    if support_bot and support_bot.bot and support_bot.bot.is_ready() and bot_guilds():
+        return True, session_id, ""
+    detail = str(health.get("status") or "The bot is not connected to Discord yet.")
+    return True, session_id, f"Owner login worked. Gem Tool is not connected to Discord yet, so servers will appear after it reconnects. {detail}"
 
 
 def run_bot_coro(coro, timeout: float = 12.0):
@@ -278,7 +264,7 @@ def run_bot_coro(coro, timeout: float = 12.0):
         return False, f"{type(exc).__name__}: {exc}"
 
 
-def create_session(user: dict[str, Any], guilds: list[dict[str, Any]]) -> str:
+def create_session(user: dict[str, Any], guilds: list[dict[str, Any]], *, owner_access: bool = False) -> str:
     manageable = {}
     for guild in guilds:
         guild_id = str(guild.get("id") or "")
@@ -303,6 +289,7 @@ def create_session(user: dict[str, Any], guilds: list[dict[str, Any]]) -> str:
             "username": str(user.get("global_name") or user.get("username") or "Discord user"),
             "avatar_url": compact_avatar(user),
         },
+        "owner_access": owner_access,
         "manageable_guilds": manageable,
     }
     return session_id
@@ -1606,10 +1593,24 @@ def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]
     bot_lookup = bot_guilds()
     manageable = session.get("manageable_guilds", {})
     visible_guilds = []
-    for guild_id, record in manageable.items():
-        guild = bot_lookup.get(str(guild_id))
-        if guild:
-            visible_guilds.append((guild, record))
+    if session.get("owner_access"):
+        for guild in bot_lookup.values():
+            visible_guilds.append(
+                (
+                    guild,
+                    {
+                        "id": str(guild.id),
+                        "name": guild.name,
+                        "owner": True,
+                        "permissions": ADMINISTRATOR_PERMISSION,
+                    },
+                )
+            )
+    else:
+        for guild_id, record in manageable.items():
+            guild = bot_lookup.get(str(guild_id))
+            if guild:
+                visible_guilds.append((guild, record))
     visible_guilds.sort(key=lambda item: item[0].name.lower())
 
     cards = []
@@ -1624,10 +1625,15 @@ def render_server_selection(session: dict[str, Any], query: dict[str, list[str]]
 
     empty = ""
     if not visible_guilds:
-        empty = """
+        empty_text = (
+            "Owner login is active, but Gem Tool is not connected to Discord yet. "
+            "Servers will appear here after the bot reconnects."
+            if session.get("owner_access")
+            else "No manageable servers are available yet. Make sure the bot is invited to the server and your Discord account has Manage Server or Administrator there."
+        )
+        empty = f"""
         <div class="notice">
-          No manageable servers are available yet. Make sure the bot is invited to the server and
-          your Discord account has Manage Server or Administrator there.
+          {empty_text}
         </div>"""
 
     bot_warning = "" if bot_is_ready() else '<div class="notice error">Gem Tool is starting or offline, so server data may not be available yet.</div>'
@@ -2776,7 +2782,10 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
         if not ok:
             self._send_redirect("/applications?error=" + quote(error))
             return
-        self._send_redirect("/applications", cookies=[make_cookie(SESSION_COOKIE, sign_value(session_id))])
+        target = "/applications"
+        if error:
+            target += "?ok=" + quote(error)
+        self._send_redirect(target, cookies=[make_cookie(SESSION_COOKIE, sign_value(session_id))])
 
     def _handle_logout(self) -> None:
         cookie = self._cookies().get(SESSION_COOKIE)
@@ -2787,6 +2796,8 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
         self._send_redirect("/applications", cookies=[expire_cookie(SESSION_COOKIE)])
 
     def _session_can_manage(self, session: dict[str, Any], guild_id: int) -> bool:
+        if session.get("owner_access"):
+            return str(guild_id) in bot_guilds()
         return str(guild_id) in session.get("manageable_guilds", {}) and str(guild_id) in bot_guilds()
 
     def _handle_applications_post(self) -> None:
