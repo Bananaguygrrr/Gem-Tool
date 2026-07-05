@@ -3560,6 +3560,22 @@ def run() -> None:
         return
     try:
         bot.run(TOKEN)
+    except discord.LoginFailure as error:
+        print(f"Discord login failed. Reset DISCORD_TOKEN if this continues: {error}", flush=True)
+    except discord.HTTPException as error:
+        error_text = str(error)
+        error_lower = error_text.lower()
+        if "1015" in error_text or "429" in error_text or "rate limited" in error_lower:
+            print(
+                "Discord is temporarily rate limiting this Render server (Cloudflare 1015). "
+                "The website will stay online, but the Discord bot is offline until the cooldown clears. "
+                "Wait 15-60 minutes and avoid repeated redeploys/login attempts.",
+                flush=True,
+            )
+        else:
+            print(f"Discord startup HTTP error: {error}", flush=True)
+    except Exception as error:
+        print(f"Gem Tool bot failed to start: {type(error).__name__}: {error}", flush=True)
     finally:
         save_message_stats(force=True)
 

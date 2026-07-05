@@ -270,6 +270,13 @@ def prune_sessions() -> None:
             SESSIONS.pop(session_id, None)
 
 
+def discord_rate_limit_message() -> str:
+    return (
+        "Discord is temporarily rate limiting this Render server (Cloudflare 1015). "
+        "Wait 15-60 minutes, avoid repeated login attempts or redeploys, then try again."
+    )
+
+
 def discord_request_json(
     url: str,
     *,
@@ -289,6 +296,9 @@ def discord_request_json(
             raw = response.read().decode("utf-8")
     except HTTPError as error:
         details = error.read().decode("utf-8", "replace")
+        details_lower = details.lower()
+        if error.code == 429 or "error 1015" in details_lower or "rate limited" in details_lower:
+            raise RuntimeError(discord_rate_limit_message()) from error
         raise RuntimeError(f"Discord HTTP {error.code}: {details[:300]}") from error
     except URLError as error:
         raise RuntimeError(f"Discord request failed: {error.reason}") from error
