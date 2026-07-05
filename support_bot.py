@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -38,7 +38,7 @@ DISCORD_CLIENT_ID = (
     or ""
 ).strip()
 APP_NAME = os.getenv("APP_NAME", "Gem Tool").strip() or "Gem Tool"
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://gemtool.bot").strip()
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://gem-tool.onrender.com").strip()
 COMMAND_SYNC_MODE = os.getenv("COMMAND_SYNC_MODE", "global").strip().lower()
 COMMAND_SYNC_GUILD_ID = os.getenv("COMMAND_SYNC_GUILD_ID", "").strip()
 
@@ -3566,3 +3566,4 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+

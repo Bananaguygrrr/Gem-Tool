@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import base64
@@ -38,7 +38,7 @@ except ModuleNotFoundError as exc:
 ROOT = Path(__file__).resolve().parent
 LAST_UPDATE = os.getenv("LAST_UPDATE", "").strip()
 APP_NAME = os.getenv("APP_NAME", "Gem Tool").strip() or "Gem Tool"
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://gemtool.bot").strip().rstrip("/")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://gem-tool.onrender.com").strip().rstrip("/")
 SUPPORT_SERVER_URL = (os.getenv("SUPPORT_SERVER_URL") or "https://discord.gg/sUxqbyV87F").strip()
 DISCORD_CLIENT_ID = (
     os.getenv("DISCORD_CLIENT_ID")
@@ -3113,3 +3113,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
