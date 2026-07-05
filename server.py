@@ -1492,6 +1492,16 @@ def base_layout(title: str, body: str, *, session: Optional[dict[str, Any]] = No
 
 def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]]) -> str:
     error = form_one(query, "error")
+    error_lower = error.lower()
+    oauth_rate_limited = bool(
+        error
+        and (
+            "1015" in error_lower
+            or "rate limit" in error_lower
+            or "rate-limiting" in error_lower
+            or "rate limiting" in error_lower
+        )
+    )
     setup = ""
     if not dashboard_ready():
         setup = f"""
@@ -1505,10 +1515,15 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
     error_html = f'<div class="notice error">{esc(error)}</div>' if error else ""
     owner_login = ""
     if DASHBOARD_OWNER_TOKEN:
-        owner_login = """
+        owner_heading = "Owner recovery login"
+        owner_note = "Use this only when Discord OAuth is temporarily rate limited."
+        if oauth_rate_limited:
+            owner_heading = "Use owner recovery"
+            owner_note = "Discord OAuth is blocked right now, so use the owner token instead of pressing Login again."
+        owner_login = f"""
         <div class="notice">
-          <strong>Owner recovery login</strong>
-          <p class="muted">Use this only when Discord OAuth is temporarily rate limited.</p>
+          <strong>{owner_heading}</strong>
+          <p class="muted">{owner_note}</p>
           <form method="post" action="/applications/owner-login">
             <label>Owner token</label>
             <input type="password" name="token" autocomplete="current-password" required>
@@ -1517,6 +1532,17 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
             </div>
           </form>
         </div>"""
+    elif oauth_rate_limited:
+        owner_login = """
+        <div class="notice error">
+          <strong>Owner recovery is not enabled.</strong>
+          <p class="muted">Set <code>DASHBOARD_OWNER_TOKEN</code> in Render, then redeploy to unlock the dashboard while Discord OAuth is rate limited.</p>
+        </div>"""
+    discord_login = f"""
+        <div class="button-row">
+          <a class="button {"primary" if not oauth_rate_limited else ""}" href="/applications/login">{discord_logo_svg()}<strong>{"Login" if not oauth_rate_limited else "Try Discord login again"}</strong></a>
+        </div>"""
+    login_actions = owner_login + discord_login if oauth_rate_limited else discord_login + owner_login
     body = f"""
     <section class="hero">
       <div>
@@ -1539,10 +1565,7 @@ def render_login(session: Optional[dict[str, Any]], query: dict[str, list[str]])
         <p class="muted">Sign in with Discord to manage the servers where you have permission.</p>
         {setup}
         {error_html}
-        <div class="button-row">
-          <a class="button primary" href="/applications/login">{discord_logo_svg()}<strong>Login</strong></a>
-        </div>
-        {owner_login}
+        {login_actions}
       </aside>
     </section>"""
     return base_layout("Dashboard", body, session=session, active="dashboard")
@@ -2716,6 +2739,14 @@ class GemToolSiteHandler(SimpleHTTPRequestHandler):
 
     def _handle_login(self) -> None:
         client_id = effective_client_id()
+        support_bot = load_support_bot()
+        support_health = support_bot.status_payload() if support_bot else {}
+        if DASHBOARD_OWNER_TOKEN and str(support_health.get("bot_state") or "") == "rate_limited":
+            self._send_redirect(
+                "/applications?error="
+                + quote("Discord OAuth is rate limited right now. Use owner recovery instead of pressing Login again.")
+            )
+            return
         if not dashboard_ready():
             self._send_redirect("/applications?error=" + quote("Discord login is not configured yet."))
             return
