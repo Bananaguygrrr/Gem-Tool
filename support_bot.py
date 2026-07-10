@@ -3575,13 +3575,20 @@ bot.setup_hook = setup_hook
 
 def status_payload() -> dict[str, Any]:
     online = bool(BOT_ONLINE and not bot.is_closed())
+    bot_state = "online" if online else BOT_STARTUP_STATE
+    status = "Bot online" if online else (BOT_STARTUP_MESSAGE or "Bot starting or offline")
+    retry_at = BOT_RETRY_AT
+    if not TOKEN:
+        bot_state = "disabled"
+        status = "No DISCORD_TOKEN is set; Gem Tool bot is disabled."
+        retry_at = 0
     return {
         "running": True,
         "online": online,
-        "status": "Bot online" if online else (BOT_STARTUP_MESSAGE or "Bot starting or offline"),
-        "bot_state": "online" if online else BOT_STARTUP_STATE,
-        "startup_message": BOT_STARTUP_MESSAGE,
-        "retry_at": BOT_RETRY_AT,
+        "status": status,
+        "bot_state": bot_state,
+        "startup_message": status,
+        "retry_at": retry_at,
         "guild_count": len(bot.guilds),
         "bot_user": str(bot.user) if bot.user else "",
         "bot_user_id": str(bot.user.id) if bot.user else "",
