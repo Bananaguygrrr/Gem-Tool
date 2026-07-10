@@ -133,6 +133,21 @@ def is_discord_rate_limit_error(error: Any) -> bool:
     return "1015" in error_text or "429" in error_text or "rate limited" in error_lower
 
 
+def env_seconds(name: str, default: int, minimum: int) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+def restart_process_after(delay: int, reason: str) -> None:
+    print(f"Restarting Gem Tool process in {delay} seconds: {reason}", flush=True)
+    time.sleep(max(0, delay))
+    save_message_stats(force=True)
+    print("Restarting Gem Tool process now to refresh the Discord client session.", flush=True)
+    os._exit(75)
+
+
 def format_count(value: Any) -> str:
     try:
         return f"{int(value):,}"
@@ -3582,42 +3597,46 @@ def run() -> None:
         set_bot_state("disabled", "No DISCORD_TOKEN is set; Gem Tool bot is disabled.")
         print("No DISCORD_TOKEN set; Gem Tool bot is disabled.", flush=True)
         return
-    retry_delay = 60
-    while True:
-        BOT_ONLINE = False
-        if bot.is_closed():
-            bot.clear()
-        set_bot_state("starting", "Connecting to Discord.")
-        try:
-            bot.run(TOKEN)
-            set_bot_state("stopped", "Bot stopped.")
-            return
-        except discord.LoginFailure as error:
-            set_bot_state("login_failed", "Discord login failed. Reset DISCORD_TOKEN in Render.")
-            print(f"Discord login failed. Reset DISCORD_TOKEN if this continues: {error}", flush=True)
-            return
-        except discord.HTTPException as error:
-            if is_discord_rate_limit_error(error):
-                retry_delay = max(retry_delay, 15 * 60)
-                message = (
-                    "Discord is temporarily rate limiting this Render server (Cloudflare 1015). "
-                    "The bot will retry automatically; avoid repeated redeploys/login attempts."
-                )
-                set_bot_state("rate_limited", message, retry_delay)
-                print(f"{message} Next retry in {retry_delay} seconds.", flush=True)
-            else:
-                message = f"Discord startup HTTP error: {error}"
-                set_bot_state("http_error", message, retry_delay)
-                print(message, flush=True)
-        except Exception as error:
-            message = f"Gem Tool bot failed to start: {type(error).__name__}: {error}"
-            set_bot_state("error", message, retry_delay)
+    BOT_ONLINE = False
+    retry_delay = 0
+    restart_reason = ""
+    set_bot_state("starting", "Connecting to Discord.")
+    try:
+        bot.run(TOKEN)
+        set_bot_state("stopped", "Bot stopped.")
+        return
+    except discord.LoginFailure as error:
+        set_bot_state("login_failed", "Discord login failed. Reset DISCORD_TOKEN in Render.")
+        print(f"Discord login failed. Reset DISCORD_TOKEN if this continues: {error}", flush=True)
+        return
+    except discord.HTTPException as error:
+        if is_discord_rate_limit_error(error):
+            retry_delay = env_seconds("DISCORD_RATE_LIMIT_RETRY_SECONDS", 60 * 60, 15 * 60)
+            message = (
+                "Discord is temporarily rate limiting this Render server (Cloudflare 1015). "
+                "The bot will retry automatically; avoid repeated redeploys/login attempts."
+            )
+            set_bot_state("rate_limited", message, retry_delay)
+            restart_reason = "Discord rate limit"
+            print(f"{message} Next clean restart in {retry_delay} seconds.", flush=True)
+        else:
+            retry_delay = env_seconds("DISCORD_STARTUP_RETRY_SECONDS", 5 * 60, 60)
+            message = f"Discord startup HTTP error: {error}"
+            set_bot_state("http_error", message, retry_delay)
+            restart_reason = "Discord HTTP startup error"
             print(message, flush=True)
-        finally:
-            BOT_ONLINE = False
-            save_message_stats(force=True)
-        time.sleep(retry_delay)
-        retry_delay = min(max(retry_delay * 2, 60), 60 * 60)
+    except Exception as error:
+        retry_delay = env_seconds("DISCORD_STARTUP_RETRY_SECONDS", 5 * 60, 60)
+        message = f"Gem Tool bot failed to start: {type(error).__name__}: {error}"
+        set_bot_state("error", message, retry_delay)
+        restart_reason = message
+        print(message, flush=True)
+    finally:
+        BOT_ONLINE = False
+        save_message_stats(force=True)
+
+    if retry_delay:
+        restart_process_after(retry_delay, restart_reason or "temporary Discord startup failure")
 
 
 if __name__ == "__main__":
